@@ -10,7 +10,25 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="game-shell" aria-label="Cosmic Garage" data-mode="garage">
+    <div class="hangar-environment" aria-hidden="true">
+      <div class="hangar-wing left-wing"><div class="hangar-window"></div><div class="hangar-pipe"></div><div class="blueprint"><svg viewBox="0 0 180 240"><path d="M90 22Q138 65 118 177H62Q43 65 90 22ZM68 177L54 207H126L112 177M61 135L35 172H61M119 135L145 172H119M90 43V214M23 221H157"/><circle cx="90" cy="87" r="17"/><path d="M14 25V209M8 25H20M8 209H20M43 10H137"/></svg></div><div class="scrap-stack"></div></div>
+      <div class="hangar-wing right-wing"><div class="hangar-window"></div><div class="hangar-pipe"></div><div class="cable-reel"></div><div class="scrap-stack"></div></div>
+    </div>
+    <section class="startup-screen" id="startupScreen" aria-label="Подготовка Cosmic Garage" aria-busy="true">
+      <div class="startup-brand"><small>НЕБОЛЬШОЙ АНГАР · БОЛЬШИЕ ПЛАНЫ</small><h1>COSMIC <span>GARAGE</span></h1></div>
+      <div class="startup-scene" aria-hidden="true">
+        <div class="prep-door"><div class="prep-moon"></div></div><div class="prep-lamp"></div><div class="prep-cable"></div>
+        <div class="prep-rocket"><div class="prep-cone"></div><div class="prep-port"></div><div class="prep-tape"></div><div class="prep-label">07</div><div class="prep-fin left-fin"></div><div class="prep-fin right-fin"></div><div class="prep-engine"></div><div class="prep-tank"></div></div>
+        <div class="prep-crate"></div><div class="prep-floor"></div>
+      </div>
+      <div class="startup-controls">
+        <div id="startupLoading"><p id="startupStatus" role="status">Открываем мастерскую…</p><progress id="startupProgress" max="100" value="0" aria-label="Подготовка игры"></progress><small id="startupDetail">Загружаем маленькие игровые модули</small></div>
+        <button class="collect-button" id="enterGarage" type="button" hidden>В ГАРАЖ</button>
+        <p class="startup-footnote">Из лома — к орбите.</p>
+      </div>
+    </section>
+    <noscript><p class="startup-error">Для игры нужен JavaScript. Включите его и обновите страницу.</p></noscript>
+    <main class="game-shell" aria-label="Cosmic Garage" data-mode="garage" inert aria-hidden="true">
       <header class="topbar">
         <div>
           <p class="eyebrow brand">COSMIC <span>GARAGE</span></p>
@@ -97,6 +115,6 @@
       </section>
     </main>
 
-    <script type="module" src="./game.js"></script>
+    <script type="module" src="./startup.js"></script>
   </body>
 </html>

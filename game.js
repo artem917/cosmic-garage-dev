@@ -21,7 +21,9 @@ const dom = Object.fromEntries(
   ].map((id) => [id, document.querySelector(`#${id}`)]),
 );
 
+window.dispatchEvent(new CustomEvent("cosmic-startup-stage", {detail:"ui"}));
 let state = loadState();
+window.dispatchEvent(new CustomEvent("cosmic-startup-stage", {detail:"save"}));
 let mode = "garage";
 let launch = null;
 let particles = [];
@@ -1026,6 +1028,9 @@ document.addEventListener("visibilitychange",()=>{lastFrame=performance.now();ke
 window.addEventListener("resize", resizeCanvas);
 new ResizeObserver(resizeCanvas).observe(canvas);
 
+window.dispatchEvent(new CustomEvent("cosmic-startup-stage", {detail:"logic"}));
 resizeCanvas();
 renderGarageUi();
+drawGarage(performance.now());
+window.dispatchEvent(new CustomEvent("cosmic-startup-stage", {detail:"canvas"}));
 requestAnimationFrame(frame);
