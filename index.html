@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#111a2f" />
+    <meta name="description" content="Cosmic Garage — короткий прототип цикла улучшить, запустить, собрать лом." />
+    <title>Cosmic Garage — прототип</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111a2f'/%3E%3Cpath d='M16 4c5 4 7 10 5 17l-5 4-5-4C9 14 11 8 16 4Z' fill='%23ffd166'/%3E%3Ccircle cx='16' cy='13' r='3' fill='%2368d8ff'/%3E%3Cpath d='m13 24 3 6 3-6' fill='%23ff6b35'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="game-shell" aria-label="Cosmic Garage" data-mode="garage">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow brand">COSMIC <span>GARAGE</span></p>
+          <p class="location" id="locationLabel">ГАРАЖ · ОТСЕК 07</p>
+        </div>
+        <div class="wallet" aria-live="polite">
+          <span class="scrap-icon" aria-hidden="true">◆</span>
+          <span><strong id="scrapValue">0</strong><small>ЛОМ</small></span>
+        </div>
+      </header>
+      <section class="goal-panel" aria-label="Цель и маршрут">
+        <strong id="goalStatus">РЕКОРД: 0 м · РУБЕЖ: СВАЛКА</strong>
+        <div id="goalDetail" class="goal-detail"></div>
+        <div id="routeMap" class="route-map"></div>
+      </section>
+
+      <section class="flight-stage" aria-label="Ракета и запуск">
+        <canvas id="gameCanvas" tabindex="0" aria-label="Рули ракетой: палец или мышь влево-вправо; также A/D или стрелки"></canvas>
+        <div id="objectLayer" class="object-layer" hidden></div>
+        <div class="garage-stats" id="garageStats">
+          <div><small>ЛУЧШИЙ ПОЛЁТ</small><strong><span id="bestValue">0</span> м</strong></div>
+          <div><small>ЗАПУСКОВ</small><strong id="launchCount">0</strong></div>
+        </div>
+        <div class="flight-hud" id="flightHud" hidden>
+          <div class="hud-reading"><small>ВЫСОТА</small><strong><span id="distanceValue">0</span> м</strong></div>
+          <div class="hud-reading right"><small>ЛИЧНЫЙ РЕКОРД</small><strong><span id="flightBestValue">0</span> м</strong></div>
+          <div class="flight-progress"><span id="flightProgressBar"></span><i id="recordMarker" role="img" aria-label="Предыдущий рекорд" hidden></i></div>
+          <div class="resource-hud">
+            <span>▰ <b id="fuelValue">18</b> с</span>
+            <span>КОРПУС <b id="hullValue">100</b></span>
+            <span>◆ <b id="cargoValue">0</b></span>
+            <span><b id="runClock">0</b> с</span>
+          </div>
+        </div>
+        <div class="event-toast" id="eventToast" aria-live="assertive" hidden>
+          <span class="event-signal">!</span>
+          <div><small id="eventTitle">СОБЫТИЕ</small><strong id="eventMessage"></strong><em id="eventResult"></em></div>
+        </div>
+        <div class="machine-note" id="machineNote" aria-live="polite">Собрано из того, что не жалко</div>
+        <div class="flight-caption" id="flightCaption" hidden>ЗАЖИГАНИЕ...</div>
+        <div class="upgrade-pop" id="upgradePop" aria-live="polite" hidden></div>
+        <div id="recordBanner" class="record-banner" aria-live="polite" hidden>НОВЫЙ РЕКОРД!</div>
+        <div id="tutorialOverlay" class="tutorial-overlay" hidden>
+          <div id="tutorialSpot" class="tutorial-spot"></div>
+          <section id="tutorialBubble" class="tutorial-bubble" role="dialog" aria-modal="true" aria-labelledby="tutorialTitle" aria-describedby="tutorialText">
+            <small>ОБУЧЕНИЕ · ПОЛЁТ НА ПАУЗЕ</small>
+            <h2 id="tutorialTitle"></h2>
+            <p id="tutorialText"></p>
+            <button id="tutorialContinue" type="button">ПОНЯТНО · ЛЕТИМ</button>
+            <button id="tutorialSkip" class="tutorial-skip" type="button">Пропустить обучение</button>
+          </section>
+        </div>
+      </section>
+
+      <section class="garage-panel" id="garagePanel">
+        <div class="panel-heading">
+          <div><p class="eyebrow">ВЕРСТАК</p><h1>Прикрутим что-нибудь?</h1></div>
+          <button class="reset-button" id="resetButton" type="button">DEV RESET</button>
+        </div>
+        <div class="upgrade-list" id="upgradeList"></div>
+        <p class="bench-hint" id="benchHint" aria-live="polite">Первый полёт — и хватит на новую деталь</p>
+        <button class="launch-button" id="launchButton" type="button">
+          <span class="launch-button-icon" aria-hidden="true">▲</span>
+          <span><strong>ЗАПУСТИТЬ</strong><small id="launchEstimate">Ожидаемая дальность ~132 м</small></span>
+        </button>
+      </section>
+
+      <aside id="upgradeExplanation" class="upgrade-explanation" role="tooltip" hidden>
+        <strong id="upgradeExplanationTitle"></strong>
+        <p id="upgradeExplanationText"></p>
+        <button id="infoClose" type="button" aria-label="Закрыть объяснение">×</button>
+      </aside>
+      <section class="result-card" id="resultCard" role="dialog" aria-modal="true" aria-labelledby="resultTitle" hidden>
+        <p class="eyebrow" id="resultKicker">РЕЗУЛЬТАТ ЗАПУСКА</p>
+        <h2 id="resultTitle">Эффектный кратер</h2>
+        <div class="distance-result"><strong id="resultDistance">0</strong><span>М ВЫСОТЫ</span></div>
+        <div class="result-breakdown" id="resultBreakdown"></div>
+        <div class="reward-box">
+          <span class="scrap-icon large" aria-hidden="true">◆</span>
+          <div><small>ДОБЫТО</small><strong>+<span id="resultReward">0</span> лома</strong></div>
+        </div>
+        <p class="result-next" id="resultNext"></p>
+        <button class="collect-button" id="collectButton" type="button">ЗАБРАТЬ И В ГАРАЖ</button>
+      </section>
+    </main>
+
+    <script type="module" src="./game.js"></script>
+  </body>
+</html>
