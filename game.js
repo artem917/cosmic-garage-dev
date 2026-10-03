@@ -5,8 +5,9 @@ import {
   sanitizeState,
   upgradeCost,
   statsFor,
-  createFlight, createCourse, seededRandom, stepFlight, flightResult, layerFor, nextMilestone, MILESTONES, clamp, progressFor, TUTORIAL_ORDER, TUTORIAL_COPY, completeTutorial, tutorialCandidate, cameraView, pointerControl, altitudeGauge, createControlTimeline, keyboardControl,
+  createFlight, createCourse, seededRandom, stepFlight, flightResult, layerFor, nextMilestone, MILESTONES, clamp, progressFor, TUTORIAL_ORDER, TUTORIAL_COPY, completeTutorial, tutorialCandidate, cameraView, pointerControl, altitudeGauge, createControlTimeline, keyboardControl, objectX, damageState,
 } from "./game-logic.js";
+import {bindUpgradeFeedback,tooltipPosition} from './upgrade-feedback.js';
 
 const SAVE_KEY = "cosmic-garage-active-v2";
 const canvas = document.querySelector("#gameCanvas");
@@ -17,7 +18,7 @@ const dom = Object.fromEntries(
     "flightBestValue", "flightProgressBar", "eventToast", "eventTitle", "eventMessage", "eventResult",
     "garagePanel", "upgradeList", "launchButton", "launchEstimate", "resultCard", "resultKicker",
     "resultTitle", "resultDistance", "resultBreakdown", "resultReward", "collectButton", "resetButton",
-    "locationLabel", "machineNote", "flightCaption", "upgradePop", "benchHint", "resultNext", "goalStatus", "routeMap", "fuelValue", "hullValue", "cargoValue", "objectLayer", "runClock", "goalDetail", "recordMarker", "recordBanner", "upgradeExplanation", "upgradeExplanationText", "upgradeExplanationTitle", "infoClose", "tutorialOverlay", "tutorialSpot", "tutorialBubble", "tutorialTitle", "tutorialText", "tutorialContinue", "tutorialSkip", "fuelHud", "fuelMeter", "fuelGain", "altitudeCapsule",
+    "locationLabel", "machineNote", "flightCaption", "upgradePop", "benchHint", "resultNext", "goalStatus", "routeMap", "fuelValue", "hullValue", "cargoValue", "objectLayer", "runClock", "goalDetail", "recordMarker", "recordBanner", "upgradeExplanation", "upgradeExplanationText", "upgradeExplanationTitle", "infoClose", "tutorialOverlay", "tutorialSpot", "tutorialBubble", "tutorialTitle", "tutorialText", "tutorialContinue", "tutorialSkip", "fuelHud", "fuelMeter", "fuelGain", "altitudeCapsule", "stageBanner", "hullHud",
   ].map((id) => [id, document.querySelector(`#${id}`)]),
 );
 
@@ -38,16 +39,12 @@ let installation = null;
 let resetArmedUntil = 0;
 let targetX = .5;
 let keyboardDirection = 0;
-let verticalInput=0;
 let keyboardActive=false;
-let pointerAnchor=null;
 let canvasBounds=null;
 const heldKeys=new Set();
 let pointerId = null;
 let objectNodes = new Map();
-let pinnedInfo = null;
-let dismissedInfo = null;
-let currentInfo = null;
+const upgradeFeedback=bindUpgradeFeedback({list:dom.upgradeList,box:dom.upgradeExplanation,title:dom.upgradeExplanationTitle,text:dom.upgradeExplanationText,close:dom.infoClose,pop:dom.upgradePop,configs:UPGRADES,isGarage:()=>mode==='garage',position:positionInfo});
 
 const PART_ICONS = {
   engine: '<path d="M9 12h18l-3 15H12z" fill="#dfb967"/><path d="M10 13H6v10h6m14-10h5v10h-6" stroke="#87b7ab" stroke-width="4"/><path d="M15 28l3 7 4-7" fill="#ff8c48"/><path d="M12 6h13v5H12z" fill="#bac7b5"/>',
@@ -123,7 +120,7 @@ function renderGarageUi(purchasedKey = null) {
     const level = state.upgrades[key];
     const cost = upgradeCost(key, level);
     const card = document.createElement("article");
-    const affordable = state.scrap >= cost;
+    const affordable = level<12&&state.scrap >= cost;
     card.dataset.category = key;
     card.className = `upgrade-card${affordable ? " affordable" : ""}${key === purchasedKey ? " purchased" : ""}`;
     card.innerHTML = `
@@ -137,14 +134,14 @@ function renderGarageUi(purchasedKey = null) {
       <button class="buy-button" type="button" data-upgrade="${key}"
         aria-label="${config.name}: улучшить за ${cost} лома"
         ${!affordable ? "disabled" : ""}>
-        ◆ ${cost}<small>${affordable ? "ПРИКРУТИТЬ" : "ЕЩЁ " + (cost - state.scrap)}</small>
+        ${level>=12?'МАКС':'◆ '+cost}<small>${level>=12?'УР. 12':affordable ? "ПРИКРУТИТЬ" : "ЕЩЁ " + (cost - state.scrap)}</small>
       </button>`;
     dom.upgradeList.append(card);
   }
 
   const stats = statsFor(state.upgrades);
-  dom.launchEstimate.textContent = `Рули ↔ и тяга ↕ · топливо ${stats.fuel.toFixed(1)} с`;
-  const available = UPGRADE_ORDER.filter((key) => state.scrap >= upgradeCost(key, state.upgrades[key]));
+  dom.launchEstimate.textContent = `Рули только ↔ · топливо ${stats.fuel.toFixed(1)} с`;
+  const available = UPGRADE_ORDER.filter((key) => state.upgrades[key]<12&&state.scrap >= upgradeCost(key, state.upgrades[key]));
   dom.benchHint.classList.toggle("ready", available.length > 0);
   dom.benchHint.textContent = available.length
     ? `Хватит на новую деталь! Доступно: ${available.length}`
@@ -172,20 +169,17 @@ function updateGoal(altitude=null) {
 }
 function setText(element,value){const text=String(value);if(element.textContent!==text)element.textContent=text;}
 function hideInfo(){
- currentInfo=null;pinnedInfo=null;dom.upgradeExplanation.hidden=true;
- dom.upgradeList.querySelectorAll("[data-info]").forEach(b=>b.setAttribute("aria-expanded","false"));
+ upgradeFeedback.hide();
 }
-function showInfo(key,pin=false){
- if(mode!=="garage"||!UPGRADES[key]||dismissedInfo===key&&!pin)return;
- if(pinnedInfo&&!pin)return;
- currentInfo=key;if(pin)pinnedInfo=key;
- dom.upgradeExplanationTitle.textContent=UPGRADES[key].name;
- dom.upgradeExplanationText.textContent=UPGRADES[key].description;
- dom.infoClose.hidden=!pin;dom.upgradeExplanation.hidden=false;
- dom.upgradeList.querySelectorAll("[data-info]").forEach(b=>b.setAttribute("aria-expanded",String(b.dataset.info===key)));
- const card=dom.upgradeList.querySelector(`[data-category="${key}"]`);
- const top=card.getBoundingClientRect().top-shell.getBoundingClientRect().top;
- dom.upgradeExplanation.style.top=`${Math.max(110,top-115)}px`;
+function positionInfo(key){
+ const viewport=window.visualViewport;
+ const visible={left:viewport?.offsetLeft??0,top:viewport?.offsetTop??0,width:viewport?.width??innerWidth,height:viewport?.height??innerHeight};
+ dom.upgradeExplanation.style.maxHeight=`${visible.height-16}px`;
+ const anchor=dom.upgradeList.querySelector(`[data-info="${key}"]`).getBoundingClientRect();
+ const bounds=shell.getBoundingClientRect();
+ dom.upgradeExplanation.style.width=`${Math.min(bounds.width-28,visible.width-16)}px`;
+ const p=tooltipPosition(anchor,bounds,dom.upgradeExplanation.getBoundingClientRect(),visible);
+ Object.assign(dom.upgradeExplanation.style,{left:`${p.left}px`,top:`${p.top}px`,width:`${p.width}px`});
 }
 function positionTutorial(){
  if(!launch?.tutorial)return;
@@ -199,9 +193,9 @@ function positionTutorial(){
 }
 function showTutorial(object){
  launch.tutorial=object;launch.run.paused=true;launch.accumulator=0;
- shell.dataset.paused="true";keyboardDirection=0;heldKeys.clear();verticalInput=0;keyboardActive=false;
+ shell.dataset.paused="true";keyboardDirection=0;heldKeys.clear();keyboardActive=false;
  if(pointerId!==null&&canvas.hasPointerCapture(pointerId))canvas.releasePointerCapture(pointerId);
- pointerId=null;pointerAnchor=null;
+ pointerId=null;
  dom.tutorialTitle.textContent=TUTORIAL_COPY[object.type].title;
  dom.tutorialText.textContent=TUTORIAL_COPY[object.type].text;
  dom.tutorialOverlay.hidden=false;positionTutorial();
@@ -214,22 +208,23 @@ function dismissTutorial(skip=false){
  launch.tutorialCooldown=launch.run.time+1.5;
  launch.tutorial=null;launch.run.paused=false;launch.accumulator=0;
  shell.dataset.paused="false";dom.tutorialOverlay.hidden=true;
- keyboardDirection=0;verticalInput=0;targetX=launch.run.x;launch.run.targetX=targetX;heldKeys.clear();lastFrame=performance.now();
- launch.controls.reset({x:targetX,thrust:0});
+ keyboardDirection=0;targetX=launch.run.x;launch.run.targetX=targetX;heldKeys.clear();lastFrame=performance.now();
+ launch.controls.reset({x:targetX});
  canvas.focus({preventScroll:true});
 }
 function makeObjectNode(o){
  const node=document.createElement("div");
  node.className="flight-object "+o.type;node.dataset.type=o.type;node.dataset.chunk=o.chunk??0;
  node.setAttribute("role","img");
- node.setAttribute("aria-label",({fuel:"Топливо +1.4 с",scrap:"Лом +10",salvage:"Ценный лом +32",hazard:"Опасный обломок"})[o.type]);
- node.innerHTML=({fuel:'<i>▰</i><small>+1.4 с</small>',scrap:'<i>◆</i><small>+10</small>',salvage:'<i>▣</i><small>+32</small>',hazard:'<i>⚠</i><small>ОБЛОМОК</small>'})[o.type];
+ node.setAttribute("aria-label",({fuel:"Топливо +6 с",scrap:"Лом +10",salvage:"Ценный лом +32",hazard:"Опасный обломок"})[o.type]);
+ node.innerHTML=({fuel:'<i>▰</i><small>+6 с</small>',scrap:'<i>◆</i><small>+10</small>',salvage:'<i>▣</i><small>+32</small>',hazard:'<i>⚠</i>'})[o.type];
+ if(o.width){node.classList.add('wall-piece');node.style.width=`${o.width*100}%`;}
  node.hidden=true;dom.objectLayer.append(node);objectNodes.set(o.id,node);return node;
 }
 
 function buyUpgrade(key) {
-  if (mode !== "garage" || !UPGRADES[key]) return;
-  hideInfo();dismissedInfo=null;
+  if (mode !== "garage" || !UPGRADES[key] || state.upgrades[key]>=12) return;
+  hideInfo();
   const cost = upgradeCost(key, state.upgrades[key]);
   if (state.scrap < cost) return;
   const before = state.scrap;
@@ -237,11 +232,7 @@ function buyUpgrade(key) {
   state.upgrades[key] += 1;
   saveState();
   installation = { key, start: performance.now() };
-  dom.upgradePop.textContent = `${UPGRADES[key].name} · уровень ${state.upgrades[key]}!`;
-  dom.upgradePop.hidden = false;
-  dom.upgradePop.style.animation = "none";
-  void dom.upgradePop.offsetWidth;
-  dom.upgradePop.style.animation = "";
+  upgradeFeedback.purchase(key,state.upgrades[key],({engine:'Тяга выросла',fuel:'Топлива больше',hull:'Корпус крепче',guidance:'Отклик быстрее',magnet:'Захват шире'})[key]);
   burst(canvasWidth * 0.5, canvasHeight * 0.55, 28, "#ffe39a", 3.5);
   renderGarageUi(key);
   tally(dom.scrapValue, before, state.scrap, 280);
@@ -252,13 +243,13 @@ function buyUpgrade(key) {
 
 function startLaunch(){
  if(mode!=="garage")return;
- hideInfo();dismissedInfo=null;
+ hideInfo();
  const rawSeed=new URLSearchParams(location.search).get("seed");
  const rng=rawSeed!==null&&Number.isFinite(Number(rawSeed))?seededRandom(Number(rawSeed)):Math.random;
  launch={run:createFlight(state.upgrades,createCourse(rng,statsFor(state.upgrades))),plan:null,
   oldBest:state.bestAltitude,recordShown:false,recordUntil:0,start:performance.now(),resultStart:0,
   impactDone:false,quality:"mediocre",feedbackUntil:0,accumulator:0,tutorial:null,tutorialCooldown:0,lastTutorialChunk:-1,controls:createControlTimeline()};
- targetX=.5;keyboardDirection=0;verticalInput=0;keyboardActive=false;heldKeys.clear();pointerAnchor=null;objectNodes=new Map();dom.objectLayer.replaceChildren();
+ targetX=.5;keyboardDirection=0;keyboardActive=false;heldKeys.clear();objectNodes=new Map();dom.objectLayer.replaceChildren();
  setMode("launch");particles=[];shell.dataset.paused="false";
  dom.garagePanel.hidden=true;dom.garageStats.hidden=true;dom.flightHud.hidden=false;
  dom.resultCard.hidden=true;dom.eventToast.hidden=true;dom.objectLayer.hidden=false;
@@ -268,7 +259,8 @@ function startLaunch(){
  dom.recordMarker.setAttribute("aria-label",`Предыдущий рекорд ${launch.oldBest} м`);
  dom.launchButton.disabled=true;dom.machineNote.hidden=true;dom.upgradePop.hidden=true;
  dom.fuelGain.hidden=true;
- dom.flightCaption.hidden=false;dom.flightCaption.textContent="РУЛИ ↔ · ТЯГА ↕ · ТОПЛИВО ГОРИТ ВСЕГДА";
+ dom.stageBanner.hidden=true;launch.stage=0;launch.stageUntil=0;
+ dom.flightCaption.hidden=false;dom.flightCaption.textContent="РУЛИ ↔ · ПОДЪЁМ АВТОМАТИЧЕСКИЙ";
  canvas.focus({preventScroll:true});lastFrame=performance.now();updateGoal(0);drawLaunch(lastFrame,0);
 }
 
@@ -281,13 +273,13 @@ function finishLaunch() {
  setMode("result");launch.resultStart=performance.now();
  dom.locationLabel.textContent=layerFor(p.distance).name.toUpperCase()+" · РЕЗУЛЬТАТ";
  dom.flightHud.hidden=true;dom.objectLayer.hidden=true;dom.eventToast.hidden=true;
- dom.tutorialOverlay.hidden=true;dom.recordBanner.hidden=true;
+ dom.tutorialOverlay.hidden=true;dom.recordBanner.hidden=true;dom.stageBanner.hidden=true;
  dom.resultKicker.textContent=p.distance>launch.oldBest?"НОВЫЙ РЕКОРД!":"РЕЗУЛЬТАТ ПОЛЁТА";
  dom.resultCard.dataset.quality=launch.quality;
  dom.resultTitle.textContent=p.landingLabel;
  tally(dom.resultDistance,0,p.distance,300);tally(dom.resultReward,0,p.reward,300);
  dom.resultBreakdown.innerHTML=`
- <div class="result-line"><span>Финиш · время</span><strong>${p.endAltitude} м · ${p.duration.toFixed(1)} с</strong></div>
+ <div class="result-line"><span>Рекорд · время</span><strong>${state.bestAltitude} м · ${p.duration.toFixed(1)} с</strong></div>
  <div class="result-line"><span>Подъём + груз</span><strong>${p.base} + ${p.cargo} лома</strong></div>
  <div class="result-line"><span>Ценный лом · канистры · удары</span><strong>${p.salvage} · ${p.fuelPickups} · ${p.hits}</strong></div>
  ${p.firstFlightBonus?'<div class="result-line"><span>На первую деталь</span><strong>+'+p.firstFlightBonus+' лома</strong></div>':""}`;
@@ -364,7 +356,7 @@ function resetGame() {
   dom.resetButton.textContent = "DEV RESET";
   dom.resetButton.removeAttribute("aria-label");
   state = createInitialState();
-  hideInfo();dismissedInfo=null;dom.tutorialOverlay.hidden=true;dom.recordBanner.hidden=true;shell.dataset.paused="false";
+  hideInfo();dom.tutorialOverlay.hidden=true;dom.recordBanner.hidden=true;dom.stageBanner.hidden=true;shell.dataset.paused="false";
   dom.objectLayer.hidden=true;
   targetX=.5;keyboardDirection=0;
   tallies.clear();
@@ -601,7 +593,11 @@ function drawLaunch(now,dt) {
  stepFlight(r,activeDt,run=>launch.controls.sample(run.time));
  if(keyboardActive)targetX=r.targetX;
  const layer=layerFor(r.altitude);
- setText(dom.locationLabel,layer.name.toUpperCase()+" · X/Y ПОЛЁТ");
+ setText(dom.locationLabel,layer.name.toUpperCase()+" · ПОЛЁТ");
+ const stage=MILESTONES.indexOf(layer);
+ if(stage>launch.stage){launch.stage=stage;launch.stageUntil=r.time+1;dom.stageBanner.textContent=`${layer.name.toUpperCase()} · ЭТАП ${stage+1}`;}
+ dom.stageBanner.hidden=r.time>=launch.stageUntil;
+ const damage=damageState(r);dom.hullHud.dataset.damage=damage;
  setText(dom.distanceValue,Math.floor(r.altitude));
  setText(dom.flightBestValue,Math.max(launch.oldBest,Math.floor(r.peakAltitude)));
  setText(dom.fuelValue,r.fuel.toFixed(1));
@@ -615,14 +611,14 @@ function drawLaunch(now,dt) {
  updateGoal(r.altitude);
  const view=cameraView(r,canvasHeight),rocketY=view.rocketY,scale=view.scale;
  // Render only the activated immediate chunk; future chunks stay data-only.
- drawSky(r.altitude/1000,r.cameraAltitude*25,clamp(r.vy,0,40));
+ drawSky(r.altitude/1000,r.time*1900,70+stage*10);
  drawLayerScenery(layer,r.cameraAltitude/28,now);
  const shake=reducedMotion?0:r.slow>0?Math.sin(now*.08)*4:0;
  for(const o of r.objects){
   if(!o.active)continue;
   const node=objectNodes.get(o.id)??makeObjectNode(o),y=view.worldY(o.altitude);
   node.hidden=o.done||y<110||y>canvasHeight;
-  if(!node.hidden){if(!node.dataset.placed){node.style.left=`${o.x*100}%`;node.dataset.placed="true";}node.style.transform=`translate(-50%,calc(${y}px - 50%))`;}
+  if(!node.hidden){node.style.left=`${objectX(o,r)*100}%`;node.style.transform=`translate(-50%,calc(${y}px - 50%))`;}
  }
  const rocketX=r.x*canvasWidth;
  ctx.save();ctx.translate(shake,0);
@@ -630,10 +626,11 @@ function drawLaunch(now,dt) {
   ctx.strokeStyle="#92efca88";ctx.setLineDash([4,6]);ctx.lineWidth=1.5;
   ctx.beginPath();ctx.ellipse(rocketX,rocketY,r.stats.magnet*canvasWidth,12*scale,0,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
  }
- drawRocket(rocketX,rocketY,Math.min(.64,canvasWidth/570),clamp(r.vx*.19,-.2,.2),r.slow>0?.4:clamp(.7+r.thrust*.3,.2,1),state.upgrades,now);
- if(r.hull<r.stats.hull){
+ drawRocket(rocketX,rocketY,Math.min(.64,canvasWidth/570),clamp(r.vx*.19,-.2,.2),r.slow>0?.4:.8,state.upgrades,now);
+ if(damage){
   ctx.fillStyle="#313832aa";ctx.beginPath();ctx.ellipse(rocketX-8,rocketY,12,7,.3,0,Math.PI*2);ctx.fill();
-  if(Math.random()<dt*20){particles.push({x:rocketX,y:rocketY+36,vx:Math.random()-.5,vy:2,life:.65,maxLife:.65,size:7,color:"#424b48"});}
+  ctx.strokeStyle='#613e33';ctx.lineWidth=damage+1;ctx.beginPath();ctx.moveTo(rocketX-9,rocketY-15);ctx.lineTo(rocketX+7,rocketY-2);ctx.lineTo(rocketX-6,rocketY+10);ctx.stroke();
+  if(Math.random()<activeDt*[0,4,22,40][damage]){particles.push({x:rocketX,y:rocketY+36,vx:Math.random()-.5,vy:2,life:.65,maxLife:.65,size:4+damage*2,color:damage===3?'#392d2e':'#424b48'});}
  }
  ctx.restore();
  for(const event of r.events.splice(0)){
@@ -648,7 +645,7 @@ function drawLaunch(now,dt) {
    const denominator=Math.max(r.stats.fuel,event.after);
    dom.fuelMeter.animate([{transform:`scaleX(${event.before/denominator})`},{transform:`scaleX(${event.after/denominator})`}],{duration:260});
   }
-  dom.eventTitle.textContent=event.type==="hazard"?"НЕ СМЕРТЕЛЬНО — ВЫРУЛИВАЙ":"ПОДОБРАНО";
+  dom.eventTitle.textContent=event.type==="hazard"?(r.hull<=30?"ЕЩЁ ОДИН УДАР — И ВСЁ":"УДАР — ВЫРУЛИВАЙ"):"ПОДОБРАНО";
   dom.eventMessage.textContent=event.text;dom.eventResult.textContent="";
   dom.eventToast.dataset.impact=event.type==="hazard"?"hit":"clear";
   dom.eventToast.hidden=false;launch.feedbackUntil=now+1250;
@@ -659,8 +656,7 @@ function drawLaunch(now,dt) {
   launch.recordShown=true;launch.recordUntil=r.time+2;dom.recordBanner.textContent="НОВЫЙ РЕКОРД!";
  }
  dom.recordBanner.hidden=r.time>launch.recordUntil||!launch.recordShown;
- const next=nextMilestone(r.altitude);
- setText(dom.flightCaption,`ТЯГА ${r.thrust>.2?"↑↑":r.thrust<-.8?"↓":"↑"} · ${r.vy.toFixed(0)} м/с · ${r.fuel<5?"ИЩИ ТОПЛИВО":"РУЛИ ↔ · ТЯГА ↕"}`);
+ setText(dom.flightCaption,`${r.vy.toFixed(0)} м/с · ${damage===3?'ПОСЛЕДНИЙ ШАНС · ':''}${r.fuel<10?"ИЩИ ТОПЛИВО":"ИЩИ ПРОХОД · РУЛИ ↔"}`);
  if(!r.paused&&!r.ended&&r.time>=launch.tutorialCooldown){
   const candidate=tutorialCandidate(r,state.tutorials,launch.lastTutorialChunk);
   if(candidate&&objectNodes.get(candidate.id)&&!objectNodes.get(candidate.id).hidden)showTutorial(candidate);
@@ -957,48 +953,7 @@ dom.upgradeList.addEventListener("click", (event) => {
   if (button) buyUpgrade(button.dataset.upgrade);
 });
 
-// Inspecting a card never purchases: only [data-upgrade] handles money.
-dom.upgradeList.addEventListener("click",event=>{
- const button=event.target.closest("[data-info]");
- if(!button)return;
- const key=button.dataset.info;
- if(pinnedInfo===key){hideInfo();dismissedInfo=key;}
- else{dismissedInfo=null;hideInfo();showInfo(key,true);}
-});
-dom.upgradeList.addEventListener("pointerover",event=>{
- if(event.pointerType==="touch")return;
- const card=event.target.closest("[data-category]");
- if(card)showInfo(card.dataset.category);
-});
-dom.upgradeList.addEventListener("pointerout",event=>{
- const card=event.target.closest("[data-category]");
- if(!card||card.contains(event.relatedTarget)||dom.upgradeExplanation.contains(event.relatedTarget))return;
- dismissedInfo=null;
- if(!pinnedInfo&&!card.contains(document.activeElement))hideInfo();
-});
-dom.upgradeList.addEventListener("focusin",event=>{
- const card=event.target.closest("[data-category]");
- if(card)showInfo(card.dataset.category);
-});
-dom.upgradeList.addEventListener("focusout",event=>{
- const card=event.target.closest("[data-category]");
- if(card&&!card.contains(event.relatedTarget)&&!dom.upgradeExplanation.contains(event.relatedTarget)){
-  dismissedInfo=null;if(!pinnedInfo)hideInfo();
- }
-});
-dom.upgradeExplanation.addEventListener("pointerleave",()=>{
- if(!pinnedInfo&&!dom.upgradeList.contains(document.activeElement))hideInfo();
-});
-dom.infoClose.addEventListener("click",()=>{
- const key=currentInfo;hideInfo();dismissedInfo=key;
- dom.upgradeList.querySelector(`[data-info="${key}"]`)?.focus({preventScroll:true});
-});
-document.addEventListener("click",event=>{
- if(pinnedInfo&&!event.target.closest("[data-info]")&&!dom.upgradeExplanation.contains(event.target))hideInfo();
-});
-document.addEventListener("keydown",event=>{
- if(event.key==="Escape"&&mode==="garage"){hideInfo();dismissedInfo=null;}
-});
+// Info interactions are bound separately by upgrade-feedback.js.
 dom.tutorialContinue.addEventListener("click",()=>dismissTutorial());
 dom.tutorialSkip.addEventListener("click",event=>{event.stopPropagation();dismissTutorial(true);});
 dom.tutorialOverlay.addEventListener("click",event=>{
@@ -1012,24 +967,24 @@ dom.resetButton.addEventListener("click", resetGame);
 function queueControl(){
  if(mode!=="launch"||launch.run.paused)return;
  const time=launch.run.time+launch.run.accumulator+(document.hidden?0:Math.max(0,(performance.now()-lastFrame)/1000));
- launch.controls.push(time,keyboardActive?{horizontal:keyboardDirection,thrust:verticalInput}:{x:targetX,thrust:verticalInput});
+ launch.controls.push(time,keyboardActive?{horizontal:keyboardDirection}:{x:targetX});
 }
 function pointerTarget(event){
  if(mode!=="launch"||launch.run.paused)return;
  const rect=canvasBounds;
- const control=pointerControl(event.clientX-rect.left,event.clientY-rect.top,rect.width,rect.height,event.pointerType==="mouse"?null:pointerAnchor);
- targetX=control.x;verticalInput=control.thrust;keyboardDirection=0;keyboardActive=false;heldKeys.clear();
+ const control=pointerControl(event.clientX-rect.left,event.clientY-rect.top,rect.width);
+ targetX=control.x;keyboardDirection=0;keyboardActive=false;heldKeys.clear();
  queueControl();
 }
 canvas.addEventListener("pointerdown",event=>{
  if(mode!=="launch"||launch.run.paused)return;
- canvasBounds=canvas.getBoundingClientRect();pointerAnchor=event.clientY-canvasBounds.top;
+ canvasBounds=canvas.getBoundingClientRect();
  pointerId=event.pointerId;canvas.setPointerCapture(pointerId);pointerTarget(event);event.preventDefault();
 });
 canvas.addEventListener("pointermove",event=>{
  if(event.pointerType==="mouse"||event.pointerId===pointerId)pointerTarget(event);
 });
-function releasePointer(event){if(event.pointerId===pointerId){pointerId=null;pointerAnchor=null;if(event.pointerType!=="mouse"){verticalInput=0;queueControl();}}}
+function releasePointer(event){if(event.pointerId===pointerId)pointerId=null;}
 canvas.addEventListener("pointerup",releasePointer);canvas.addEventListener("pointercancel",releasePointer);
 window.addEventListener("keydown",event=>{
  if(launch?.run.paused){
@@ -1041,23 +996,26 @@ window.addEventListener("keydown",event=>{
  }
  if(mode!=="launch")return;
  const key=event.key.toLowerCase();
- if(["arrowleft","a","arrowright","d","arrowup","w","arrowdown","s"].includes(key)){
+ if(["arrowleft","a","arrowright","d"].includes(key)){
   heldKeys.add(key);keyboardActive=true;
-  const control=keyboardControl(heldKeys);keyboardDirection=control.horizontal;verticalInput=control.thrust;
+  const control=keyboardControl(heldKeys);keyboardDirection=control.horizontal;
   queueControl();
   event.preventDefault();
  }
 });
 window.addEventListener("keyup",event=>{
- if(!["arrowleft","a","arrowright","d","arrowup","w","arrowdown","s"].includes(event.key.toLowerCase()))return;
+ if(!["arrowleft","a","arrowright","d"].includes(event.key.toLowerCase()))return;
  heldKeys.delete(event.key.toLowerCase());
- const control=keyboardControl(heldKeys);keyboardDirection=control.horizontal;verticalInput=control.thrust;
+ const control=keyboardControl(heldKeys);keyboardDirection=control.horizontal;
  if(mode==="launch"&&!launch.run.paused)queueControl();
 });
-window.addEventListener("blur",()=>{keyboardDirection=0;verticalInput=0;heldKeys.clear();pointerId=null;pointerAnchor=null;queueControl();});
-document.addEventListener("visibilitychange",()=>{lastFrame=performance.now();keyboardDirection=0;verticalInput=0;heldKeys.clear();if(mode==="launch")launch.controls.reset({x:launch.run.targetX,thrust:0});});
-window.addEventListener("scroll",()=>{canvasBounds=canvas.getBoundingClientRect();},{passive:true});
+window.addEventListener("blur",()=>{keyboardDirection=0;heldKeys.clear();pointerId=null;queueControl();});
+document.addEventListener("visibilitychange",()=>{lastFrame=performance.now();keyboardDirection=0;heldKeys.clear();if(mode==="launch")launch.controls.reset({x:launch.run.targetX});});
+window.addEventListener("scroll",()=>{canvasBounds=canvas.getBoundingClientRect();upgradeFeedback.reposition();},{passive:true});
 window.addEventListener("resize", resizeCanvas);
+window.addEventListener('resize',()=>upgradeFeedback.reposition());
+window.visualViewport?.addEventListener('resize',()=>upgradeFeedback.reposition());
+window.visualViewport?.addEventListener('scroll',()=>upgradeFeedback.reposition());
 new ResizeObserver(resizeCanvas).observe(canvas);
 
 window.dispatchEvent(new CustomEvent("cosmic-startup-stage", {detail:"logic"}));
