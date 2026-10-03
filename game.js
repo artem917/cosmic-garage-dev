@@ -5,7 +5,7 @@ import {
   sanitizeState,
   upgradeCost,
   statsFor,
-  createFlight, createCourse, seededRandom, stepFlight, flightResult, layerFor, nextMilestone, MILESTONES, clamp, progressFor, TUTORIAL_ORDER, TUTORIAL_COPY, completeTutorial, tutorialCandidate, LOOK_AHEAD_SECONDS,
+  createFlight, createCourse, seededRandom, stepFlight, flightResult, layerFor, nextMilestone, MILESTONES, clamp, progressFor, TUTORIAL_ORDER, TUTORIAL_COPY, completeTutorial, tutorialCandidate, cameraView, pointerControl, altitudeGauge, createControlTimeline, keyboardControl,
 } from "./game-logic.js";
 
 const SAVE_KEY = "cosmic-garage-active-v2";
@@ -17,7 +17,7 @@ const dom = Object.fromEntries(
     "flightBestValue", "flightProgressBar", "eventToast", "eventTitle", "eventMessage", "eventResult",
     "garagePanel", "upgradeList", "launchButton", "launchEstimate", "resultCard", "resultKicker",
     "resultTitle", "resultDistance", "resultBreakdown", "resultReward", "collectButton", "resetButton",
-    "locationLabel", "machineNote", "flightCaption", "upgradePop", "benchHint", "resultNext", "goalStatus", "routeMap", "fuelValue", "hullValue", "cargoValue", "objectLayer", "runClock", "goalDetail", "recordMarker", "recordBanner", "upgradeExplanation", "upgradeExplanationText", "upgradeExplanationTitle", "infoClose", "tutorialOverlay", "tutorialSpot", "tutorialBubble", "tutorialTitle", "tutorialText", "tutorialContinue", "tutorialSkip",
+    "locationLabel", "machineNote", "flightCaption", "upgradePop", "benchHint", "resultNext", "goalStatus", "routeMap", "fuelValue", "hullValue", "cargoValue", "objectLayer", "runClock", "goalDetail", "recordMarker", "recordBanner", "upgradeExplanation", "upgradeExplanationText", "upgradeExplanationTitle", "infoClose", "tutorialOverlay", "tutorialSpot", "tutorialBubble", "tutorialTitle", "tutorialText", "tutorialContinue", "tutorialSkip", "fuelHud", "fuelMeter", "fuelGain", "altitudeCapsule",
   ].map((id) => [id, document.querySelector(`#${id}`)]),
 );
 
@@ -38,6 +38,11 @@ let installation = null;
 let resetArmedUntil = 0;
 let targetX = .5;
 let keyboardDirection = 0;
+let verticalInput=0;
+let keyboardActive=false;
+let pointerAnchor=null;
+let canvasBounds=null;
+const heldKeys=new Set();
 let pointerId = null;
 let objectNodes = new Map();
 let pinnedInfo = null;
@@ -138,7 +143,7 @@ function renderGarageUi(purchasedKey = null) {
   }
 
   const stats = statsFor(state.upgrades);
-  dom.launchEstimate.textContent = `Рули пальцем / мышью · топливо ${stats.fuel.toFixed(1)} с`;
+  dom.launchEstimate.textContent = `Рули ↔ и тяга ↕ · топливо ${stats.fuel.toFixed(1)} с`;
   const available = UPGRADE_ORDER.filter((key) => state.scrap >= upgradeCost(key, state.upgrades[key]));
   dom.benchHint.classList.toggle("ready", available.length > 0);
   dom.benchHint.textContent = available.length
@@ -149,22 +154,23 @@ function renderGarageUi(purchasedKey = null) {
 function updateGoal(altitude=null) {
  const inFlight=mode==="launch";
  const p=progressFor(state.bestAltitude,inFlight?altitude??0:null);
- const liveBest=inFlight?Math.max(p.record,p.altitude):p.record;
- const key=[mode,p.record,p.altitude,liveBest].join(":");
+ const liveBest=inFlight?Math.max(p.record,Math.floor(launch.run.peakAltitude)):p.record;
+ const key=[mode,p.record,inFlight?p.nearby?.altitude:liveBest].join(":");
  if(dom.goalStatus.dataset.progressKey===key)return;
  dom.goalStatus.dataset.progressKey=key;
  if(inFlight){
   const nearby=p.nearby;
-  dom.goalStatus.textContent=`СЕЙЧАС: ${p.altitude} м · ЛИЧНЫЙ РЕКОРД: ${liveBest} м`;
-  dom.goalDetail.textContent=nearby?`${nearby.name.toUpperCase()} ЧЕРЕЗ ${nearby.altitude-p.altitude} м · ОРБИТА 1000 м`:"ОРБИТА ДОСТИГНУТА · ЛУНА ПОЗЖЕ";
+  setText(dom.goalStatus,nearby?`СЛЕДУЮЩИЙ РУБЕЖ: ${nearby.name.toUpperCase()} · ${nearby.altitude} м`:"ОРБИТА ДОСТИГНУТА");
+  setText(dom.goalDetail,"ЦЕЛЬ: ОРБИТА 1000 м · ВЫШЕ = ДАЛЬШЕ");
  }else{
   dom.goalStatus.textContent=`РЕКОРД: ${p.record} м · РУБЕЖ: ${p.frontier.name.toUpperCase()}`;
   dom.goalDetail.textContent=p.next
    ?`${p.next.name.toUpperCase()}: ${p.record} / ${p.next.altitude} м · ещё ${p.remaining} м. ОРБИТА: ещё ${p.orbitRemaining} м`
    :"ОРБИТА 1000 м ДОСТИГНУТА · ЛУНА — БУДУЩАЯ ЦЕЛЬ";
  }
- dom.routeMap.innerHTML=p.route.map(m=>`<span class="${m.status}" ${m.status==="current"?'aria-current="step"':""}>${m.status==="completed"?"✓":m.status==="current"?"●":"○"} ${m.name}</span>`).join('<b>›</b>')+'<b>›</b><span class="future">Луна · позже</span>';
+ if(!inFlight)dom.routeMap.innerHTML=p.route.map(m=>`<span class="${m.status}" ${m.status==="current"?'aria-current="step"':""}>${m.status==="completed"?"✓":m.status==="current"?"●":"○"} ${m.name}</span>`).join('<b>›</b>')+'<b>›</b><span class="future">Луна · позже</span>';
 }
+function setText(element,value){const text=String(value);if(element.textContent!==text)element.textContent=text;}
 function hideInfo(){
  currentInfo=null;pinnedInfo=null;dom.upgradeExplanation.hidden=true;
  dom.upgradeList.querySelectorAll("[data-info]").forEach(b=>b.setAttribute("aria-expanded","false"));
@@ -189,12 +195,13 @@ function positionTutorial(){
  const x=rect.left-stage.left+rect.width/2,y=rect.top-stage.top+rect.height/2;
  dom.tutorialSpot.style.left=`${x-42}px`;dom.tutorialSpot.style.top=`${y-45}px`;
  dom.tutorialBubble.style.top=`${Math.max(100,Math.min(y+55,canvasHeight-dom.tutorialBubble.offsetHeight-14))}px`;
+ launch.tutorialLayout=`${canvasWidth}:${canvasHeight}`;
 }
 function showTutorial(object){
  launch.tutorial=object;launch.run.paused=true;launch.accumulator=0;
- shell.dataset.paused="true";keyboardDirection=0;
+ shell.dataset.paused="true";keyboardDirection=0;heldKeys.clear();verticalInput=0;keyboardActive=false;
  if(pointerId!==null&&canvas.hasPointerCapture(pointerId))canvas.releasePointerCapture(pointerId);
- pointerId=null;
+ pointerId=null;pointerAnchor=null;
  dom.tutorialTitle.textContent=TUTORIAL_COPY[object.type].title;
  dom.tutorialText.textContent=TUTORIAL_COPY[object.type].text;
  dom.tutorialOverlay.hidden=false;positionTutorial();
@@ -207,7 +214,8 @@ function dismissTutorial(skip=false){
  launch.tutorialCooldown=launch.run.time+1.5;
  launch.tutorial=null;launch.run.paused=false;launch.accumulator=0;
  shell.dataset.paused="false";dom.tutorialOverlay.hidden=true;
- keyboardDirection=0;targetX=launch.run.x;lastFrame=performance.now();
+ keyboardDirection=0;verticalInput=0;targetX=launch.run.x;launch.run.targetX=targetX;heldKeys.clear();lastFrame=performance.now();
+ launch.controls.reset({x:targetX,thrust:0});
  canvas.focus({preventScroll:true});
 }
 function makeObjectNode(o){
@@ -249,18 +257,19 @@ function startLaunch(){
  const rng=rawSeed!==null&&Number.isFinite(Number(rawSeed))?seededRandom(Number(rawSeed)):Math.random;
  launch={run:createFlight(state.upgrades,createCourse(rng,statsFor(state.upgrades))),plan:null,
   oldBest:state.bestAltitude,recordShown:false,recordUntil:0,start:performance.now(),resultStart:0,
-  impactDone:false,quality:"mediocre",feedbackUntil:0,accumulator:0,tutorial:null,tutorialCooldown:0,lastTutorialChunk:-1};
- targetX=.5;keyboardDirection=0;objectNodes=new Map();dom.objectLayer.replaceChildren();
+  impactDone:false,quality:"mediocre",feedbackUntil:0,accumulator:0,tutorial:null,tutorialCooldown:0,lastTutorialChunk:-1,controls:createControlTimeline()};
+ targetX=.5;keyboardDirection=0;verticalInput=0;keyboardActive=false;heldKeys.clear();pointerAnchor=null;objectNodes=new Map();dom.objectLayer.replaceChildren();
  setMode("launch");particles=[];shell.dataset.paused="false";
  dom.garagePanel.hidden=true;dom.garageStats.hidden=true;dom.flightHud.hidden=false;
  dom.resultCard.hidden=true;dom.eventToast.hidden=true;dom.objectLayer.hidden=false;
  dom.tutorialOverlay.hidden=true;dom.recordBanner.hidden=true;
  dom.recordMarker.hidden=launch.oldBest<=0;
- dom.recordMarker.style.left=`${launch.oldBest/10}%`;
+ dom.recordMarker.style.bottom=`${launch.oldBest/10}%`;
  dom.recordMarker.setAttribute("aria-label",`Предыдущий рекорд ${launch.oldBest} м`);
  dom.launchButton.disabled=true;dom.machineNote.hidden=true;dom.upgradePop.hidden=true;
- dom.flightCaption.hidden=false;dom.flightCaption.textContent="РУЛИ ↔ · БЕРИ ТОПЛИВО · ОБХОДИ ⚠";
- canvas.focus({preventScroll:true});lastFrame=performance.now();updateGoal(0);
+ dom.fuelGain.hidden=true;
+ dom.flightCaption.hidden=false;dom.flightCaption.textContent="РУЛИ ↔ · ТЯГА ↕ · ТОПЛИВО ГОРИТ ВСЕГДА";
+ canvas.focus({preventScroll:true});lastFrame=performance.now();updateGoal(0);drawLaunch(lastFrame,0);
 }
 
 function finishLaunch() {
@@ -278,7 +287,7 @@ function finishLaunch() {
  dom.resultTitle.textContent=p.landingLabel;
  tally(dom.resultDistance,0,p.distance,300);tally(dom.resultReward,0,p.reward,300);
  dom.resultBreakdown.innerHTML=`
- <div class="result-line"><span>Рекорд · время</span><strong>${Math.max(state.bestAltitude,p.distance)} м · ${p.duration.toFixed(1)} с</strong></div>
+ <div class="result-line"><span>Финиш · время</span><strong>${p.endAltitude} м · ${p.duration.toFixed(1)} с</strong></div>
  <div class="result-line"><span>Подъём + груз</span><strong>${p.base} + ${p.cargo} лома</strong></div>
  <div class="result-line"><span>Ценный лом · канистры · удары</span><strong>${p.salvage} · ${p.fuelPickups} · ${p.hits}</strong></div>
  ${p.firstFlightBonus?'<div class="result-line"><span>На первую деталь</span><strong>+'+p.firstFlightBonus+' лома</strong></div>':""}`;
@@ -383,9 +392,11 @@ function resizeCanvas() {
   dpr = Math.min(2, window.devicePixelRatio || 1);
   canvasWidth = rect.width;
   canvasHeight = rect.height;
+  canvasBounds=rect;
   canvas.width = Math.round(rect.width * dpr);
   canvas.height = Math.round(rect.height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if(launch)launch.tutorialLayout=null;
 }
 
 function burst(x, y, count, color, power) {
@@ -587,33 +598,31 @@ function drawLaunch(now,dt) {
  const r=launch.run;
  if(document.hidden)return;
  const activeDt=r.paused?0:dt;
- if(keyboardDirection)targetX=clamp(targetX+keyboardDirection*r.stats.steering*activeDt,.09,.91);
- launch.accumulator+=activeDt;
- while(launch.accumulator>=1/120&&!r.ended){
-  stepFlight(r,1/120,targetX);launch.accumulator-=1/120;
- }
+ stepFlight(r,activeDt,run=>launch.controls.sample(run.time));
+ if(keyboardActive)targetX=r.targetX;
  const layer=layerFor(r.altitude);
- dom.locationLabel.textContent=layer.name.toUpperCase()+" · АКТИВНЫЙ ПОЛЁТ";
- dom.distanceValue.textContent=Math.floor(r.altitude);
- dom.flightBestValue.textContent=Math.max(launch.oldBest,Math.floor(r.altitude));
- dom.fuelValue.textContent=r.fuel.toFixed(1);
- dom.hullValue.textContent=Math.ceil(r.hull);
- dom.cargoValue.textContent=r.cargo;
- dom.runClock.textContent=r.time.toFixed(1);
- dom.flightProgressBar.style.width=`${r.altitude/10}%`;
+ setText(dom.locationLabel,layer.name.toUpperCase()+" · X/Y ПОЛЁТ");
+ setText(dom.distanceValue,Math.floor(r.altitude));
+ setText(dom.flightBestValue,Math.max(launch.oldBest,Math.floor(r.peakAltitude)));
+ setText(dom.fuelValue,r.fuel.toFixed(1));
+ setText(dom.hullValue,Math.ceil(r.hull));
+ setText(dom.cargoValue,r.cargo);
+ setText(dom.runClock,r.time.toFixed(1));
+ dom.flightProgressBar.style.transform=`scaleY(${altitudeGauge(r.altitude,launch.oldBest).fill})`;
+ dom.altitudeCapsule.setAttribute("aria-valuenow",String(Math.floor(r.altitude)));
+ dom.fuelMeter.style.transform=`scaleX(${r.fuel/Math.max(r.stats.fuel,r.fuel)})`;
  dom.fuelValue.parentElement.classList.toggle("low",r.fuel<5);
  updateGoal(r.altitude);
- const rocketY=canvasHeight*.76;
+ const view=cameraView(r,canvasHeight),rocketY=view.rocketY,scale=view.scale;
  // Render only the activated immediate chunk; future chunks stay data-only.
- const scale=(rocketY-140)/(r.stats.climb*LOOK_AHEAD_SECONDS);
- drawSky(r.altitude/1000,r.time*1000,Math.min(40,r.stats.climb));
- drawLayerScenery(layer,r.time,now);
+ drawSky(r.altitude/1000,r.cameraAltitude*25,clamp(r.vy,0,40));
+ drawLayerScenery(layer,r.cameraAltitude/28,now);
  const shake=reducedMotion?0:r.slow>0?Math.sin(now*.08)*4:0;
  for(const o of r.objects){
   if(!o.active)continue;
-  const node=objectNodes.get(o.id)??makeObjectNode(o),y=rocketY-(o.altitude-r.altitude)*scale;
+  const node=objectNodes.get(o.id)??makeObjectNode(o),y=view.worldY(o.altitude);
   node.hidden=o.done||y<110||y>canvasHeight;
-  if(!node.hidden){node.style.left=`${o.x*100}%`;node.style.top=`${y}px`;}
+  if(!node.hidden){if(!node.dataset.placed){node.style.left=`${o.x*100}%`;node.dataset.placed="true";}node.style.transform=`translate(-50%,calc(${y}px - 50%))`;}
  }
  const rocketX=r.x*canvasWidth;
  ctx.save();ctx.translate(shake,0);
@@ -621,31 +630,42 @@ function drawLaunch(now,dt) {
   ctx.strokeStyle="#92efca88";ctx.setLineDash([4,6]);ctx.lineWidth=1.5;
   ctx.beginPath();ctx.ellipse(rocketX,rocketY,r.stats.magnet*canvasWidth,12*scale,0,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
  }
- drawRocket(rocketX,rocketY,Math.min(.64,canvasWidth/570),clamp(r.vx*.19,-.2,.2),r.slow>0?.4:1,state.upgrades,now);
+ drawRocket(rocketX,rocketY,Math.min(.64,canvasWidth/570),clamp(r.vx*.19,-.2,.2),r.slow>0?.4:clamp(.7+r.thrust*.3,.2,1),state.upgrades,now);
  if(r.hull<r.stats.hull){
   ctx.fillStyle="#313832aa";ctx.beginPath();ctx.ellipse(rocketX-8,rocketY,12,7,.3,0,Math.PI*2);ctx.fill();
   if(Math.random()<dt*20){particles.push({x:rocketX,y:rocketY+36,vx:Math.random()-.5,vy:2,life:.65,maxLife:.65,size:7,color:"#424b48"});}
  }
  ctx.restore();
  for(const event of r.events.splice(0)){
-  burst(event.x*canvasWidth,rocketY,20,event.type==="hazard"?"#ff9769":event.type==="fuel"?"#94f4de":"#ffda77",3);
+  burst(event.x*canvasWidth,view.worldY(event.altitude),20,event.type==="hazard"?"#ff9769":event.type==="fuel"?"#94f4de":"#ffda77",3);
+  if(event.type==="fuel"){
+   dom.fuelGain.textContent=`+${event.gain.toFixed(1)} с`;dom.fuelGain.hidden=false;launch.fuelFeedbackUntil=now+1400;
+   dom.fuelHud.getAnimations().forEach(a=>a.cancel());
+   dom.fuelHud.animate([{backgroundColor:"#97f4c9",color:"#153d34",transform:"scale(1.07)"},{backgroundColor:"#133a36",color:"#a1f4d8",transform:"scale(1)"}],{duration:1000});
+   dom.fuelGain.getAnimations().forEach(a=>a.cancel());
+   dom.fuelGain.animate([{opacity:1,transform:"translateY(0)"},{opacity:1,transform:"translateY(-7px)",offset:.75},{opacity:0,transform:"translateY(-12px)"}],{duration:1400});
+   // Animate the meter upward, then let the authoritative value continue its normal burn.
+   const denominator=Math.max(r.stats.fuel,event.after);
+   dom.fuelMeter.animate([{transform:`scaleX(${event.before/denominator})`},{transform:`scaleX(${event.after/denominator})`}],{duration:260});
+  }
   dom.eventTitle.textContent=event.type==="hazard"?"НЕ СМЕРТЕЛЬНО — ВЫРУЛИВАЙ":"ПОДОБРАНО";
   dom.eventMessage.textContent=event.text;dom.eventResult.textContent="";
   dom.eventToast.dataset.impact=event.type==="hazard"?"hit":"clear";
   dom.eventToast.hidden=false;launch.feedbackUntil=now+1250;
  }
  if(now>launch.feedbackUntil)dom.eventToast.hidden=true;
+ if(now>(launch.fuelFeedbackUntil??0))dom.fuelGain.hidden=true;
  if(!launch.recordShown&&r.altitude>=Math.max(25,launch.oldBest+1)){
   launch.recordShown=true;launch.recordUntil=r.time+2;dom.recordBanner.textContent="НОВЫЙ РЕКОРД!";
  }
  dom.recordBanner.hidden=r.time>launch.recordUntil||!launch.recordShown;
  const next=nextMilestone(r.altitude);
- dom.flightCaption.textContent=r.fuel<5?"ТОПЛИВО КОНЧАЕТСЯ — ИЩИ КАНИСТРУ":layer.name==="Шторм"?"ВЕТЕР ↔ · КОРРЕКТИРУЙ КУРС":next&&next.altitude-r.altitude<70?`${next.name.toUpperCase()} — ЕЩЁ ${Math.ceil(next.altitude-r.altitude)} м`:"РУЛИ ↔ · ТОПЛИВО / ЛОМ / БЕЗОПАСНОСТЬ";
+ setText(dom.flightCaption,`ТЯГА ${r.thrust>.2?"↑↑":r.thrust<-.8?"↓":"↑"} · ${r.vy.toFixed(0)} м/с · ${r.fuel<5?"ИЩИ ТОПЛИВО":"РУЛИ ↔ · ТЯГА ↕"}`);
  if(!r.paused&&!r.ended&&r.time>=launch.tutorialCooldown){
   const candidate=tutorialCandidate(r,state.tutorials,launch.lastTutorialChunk);
   if(candidate&&objectNodes.get(candidate.id)&&!objectNodes.get(candidate.id).hidden)showTutorial(candidate);
  }
- if(r.paused)positionTutorial();
+ if(r.paused&&launch.tutorialLayout!==`${canvasWidth}:${canvasHeight}`)positionTutorial();
  updateParticles(activeDt);drawParticles();
  if(r.ended)finishLaunch();
 }
@@ -917,7 +937,7 @@ function mixColor(a, b, t) {
 
 function frame(now) {
   // Catch up low-FPS visible frames with fixed simulation substeps; hidden tabs pause.
-  const dt = Math.min(1, (now - lastFrame) / 1000);
+  const dt = Math.max(0, (now - lastFrame) / 1000);
   lastFrame = now;
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
   if (mode === "launch") drawLaunch(now, dt);
@@ -989,20 +1009,27 @@ dom.launchButton.addEventListener("click", startLaunch);
 dom.collectButton.addEventListener("click", collectReward);
 dom.resetButton.addEventListener("click", resetGame);
 // Pointer coordinates stay local to the canvas. Mouse hover and touch drag share one target.
+function queueControl(){
+ if(mode!=="launch"||launch.run.paused)return;
+ const time=launch.run.time+launch.run.accumulator+(document.hidden?0:Math.max(0,(performance.now()-lastFrame)/1000));
+ launch.controls.push(time,keyboardActive?{horizontal:keyboardDirection,thrust:verticalInput}:{x:targetX,thrust:verticalInput});
+}
 function pointerTarget(event){
  if(mode!=="launch"||launch.run.paused)return;
- const rect=canvas.getBoundingClientRect();
- targetX=clamp((event.clientX-rect.left)/rect.width,.09,.91);
- keyboardDirection=0;
+ const rect=canvasBounds;
+ const control=pointerControl(event.clientX-rect.left,event.clientY-rect.top,rect.width,rect.height,event.pointerType==="mouse"?null:pointerAnchor);
+ targetX=control.x;verticalInput=control.thrust;keyboardDirection=0;keyboardActive=false;heldKeys.clear();
+ queueControl();
 }
 canvas.addEventListener("pointerdown",event=>{
  if(mode!=="launch"||launch.run.paused)return;
+ canvasBounds=canvas.getBoundingClientRect();pointerAnchor=event.clientY-canvasBounds.top;
  pointerId=event.pointerId;canvas.setPointerCapture(pointerId);pointerTarget(event);event.preventDefault();
 });
 canvas.addEventListener("pointermove",event=>{
  if(event.pointerType==="mouse"||event.pointerId===pointerId)pointerTarget(event);
 });
-function releasePointer(event){if(event.pointerId===pointerId)pointerId=null;}
+function releasePointer(event){if(event.pointerId===pointerId){pointerId=null;pointerAnchor=null;if(event.pointerType!=="mouse"){verticalInput=0;queueControl();}}}
 canvas.addEventListener("pointerup",releasePointer);canvas.addEventListener("pointercancel",releasePointer);
 window.addEventListener("keydown",event=>{
  if(launch?.run.paused){
@@ -1013,18 +1040,23 @@ window.addEventListener("keydown",event=>{
   return;
  }
  if(mode!=="launch")return;
- if(["ArrowLeft","a","A","ArrowRight","d","D"].includes(event.key)){
-  keyboardDirection=["ArrowLeft","a","A"].includes(event.key)?-1:1;
-  // A brief tap is useful too; holding continues the smooth free movement.
-  if(!event.repeat)targetX=clamp(targetX+keyboardDirection*.08,.09,.91);
+ const key=event.key.toLowerCase();
+ if(["arrowleft","a","arrowright","d","arrowup","w","arrowdown","s"].includes(key)){
+  heldKeys.add(key);keyboardActive=true;
+  const control=keyboardControl(heldKeys);keyboardDirection=control.horizontal;verticalInput=control.thrust;
+  queueControl();
   event.preventDefault();
  }
 });
 window.addEventListener("keyup",event=>{
- if(["ArrowLeft","a","A","ArrowRight","d","D"].includes(event.key))keyboardDirection=0;
+ if(!["arrowleft","a","arrowright","d","arrowup","w","arrowdown","s"].includes(event.key.toLowerCase()))return;
+ heldKeys.delete(event.key.toLowerCase());
+ const control=keyboardControl(heldKeys);keyboardDirection=control.horizontal;verticalInput=control.thrust;
+ if(mode==="launch"&&!launch.run.paused)queueControl();
 });
-window.addEventListener("blur",()=>{keyboardDirection=0;pointerId=null;});
-document.addEventListener("visibilitychange",()=>{lastFrame=performance.now();keyboardDirection=0;});
+window.addEventListener("blur",()=>{keyboardDirection=0;verticalInput=0;heldKeys.clear();pointerId=null;pointerAnchor=null;queueControl();});
+document.addEventListener("visibilitychange",()=>{lastFrame=performance.now();keyboardDirection=0;verticalInput=0;heldKeys.clear();if(mode==="launch")launch.controls.reset({x:launch.run.targetX,thrust:0});});
+window.addEventListener("scroll",()=>{canvasBounds=canvas.getBoundingClientRect();},{passive:true});
 window.addEventListener("resize", resizeCanvas);
 new ResizeObserver(resizeCanvas).observe(canvas);
 

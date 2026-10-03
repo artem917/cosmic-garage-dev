@@ -46,7 +46,7 @@
       </section>
 
       <section class="flight-stage" aria-label="Ракета и запуск">
-        <canvas id="gameCanvas" tabindex="0" aria-label="Рули ракетой: палец или мышь влево-вправо; также A/D или стрелки"></canvas>
+        <canvas id="gameCanvas" tabindex="0" aria-label="Рули X/Y: drag пальцем, мышь; A/D в стороны, W/S вверх/вниз или стрелки"></canvas>
         <div id="objectLayer" class="object-layer" hidden></div>
         <div class="garage-stats" id="garageStats">
           <div><small>ЛУЧШИЙ ПОЛЁТ</small><strong><span id="bestValue">0</span> м</strong></div>
@@ -55,13 +55,19 @@
         <div class="flight-hud" id="flightHud" hidden>
           <div class="hud-reading"><small>ВЫСОТА</small><strong><span id="distanceValue">0</span> м</strong></div>
           <div class="hud-reading right"><small>ЛИЧНЫЙ РЕКОРД</small><strong><span id="flightBestValue">0</span> м</strong></div>
-          <div class="flight-progress"><span id="flightProgressBar"></span><i id="recordMarker" role="img" aria-label="Предыдущий рекорд" hidden></i></div>
           <div class="resource-hud">
-            <span>▰ <b id="fuelValue">18</b> с</span>
+            <span id="fuelHud" class="fuel-hud">▰ <b id="fuelValue">18</b> с<i class="fuel-track"><i id="fuelMeter"></i></i><strong id="fuelGain" hidden>+1.4 с</strong></span>
             <span>КОРПУС <b id="hullValue">100</b></span>
             <span>◆ <b id="cargoValue">0</b></span>
             <span><b id="runClock">0</b> с</span>
           </div>
+        </div>
+        <div id="altitudeCapsule" class="altitude-thermometer" role="progressbar" aria-label="Высота от Свалки до Орбиты" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="0">
+          <small class="thermometer-top">1000<br>Орбита</small>
+          <div class="flight-progress"><span id="flightProgressBar"></span><i id="recordMarker" role="img" aria-label="Предыдущий рекорд" hidden></i>
+            <b style="bottom:18%" title="Город 180 м"></b><b style="bottom:36%" title="Облака 360 м"></b><b style="bottom:56%" title="Шторм 560 м"></b><b style="bottom:78%" title="Стратосфера 780 м"></b><b style="bottom:100%" title="Орбита 1000 м"></b>
+          </div>
+          <small class="thermometer-bottom">0<br>Свалка</small>
         </div>
         <div class="event-toast" id="eventToast" aria-live="assertive" hidden>
           <span class="event-signal">!</span>
@@ -104,7 +110,7 @@
       <section class="result-card" id="resultCard" role="dialog" aria-modal="true" aria-labelledby="resultTitle" hidden>
         <p class="eyebrow" id="resultKicker">РЕЗУЛЬТАТ ЗАПУСКА</p>
         <h2 id="resultTitle">Эффектный кратер</h2>
-        <div class="distance-result"><strong id="resultDistance">0</strong><span>М ВЫСОТЫ</span></div>
+        <div class="distance-result"><strong id="resultDistance">0</strong><span>М · ПИК ВЫСОТЫ</span></div>
         <div class="result-breakdown" id="resultBreakdown"></div>
         <div class="reward-box">
           <span class="scrap-icon large" aria-hidden="true">◆</span>
