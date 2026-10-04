@@ -1,6 +1,7 @@
 import {TEMPLATES,createPuzzle,rotateTile,retryPuzzle,powerPath,tileMask,DIRECTIONS} from './circuit-logic.js';
 import {RECIPE,pendingJobs,currentJob,recipeComplete,prepareSalvageReward,claimSalvageReward,assembleEngine} from './orbit-logic.js';
 import {blueprintSvg,workBaySvg,partSvg} from './dock-art.js';
+import {createOrbitTutorial} from './orbit-tutorial.js';
 
 export function wireSvg(tile,rewardPart='core') {
  const mask=tileMask(tile);
@@ -15,10 +16,17 @@ export function createOrbitUi({getState,save,setMode,enterGarage,reducedMotion=f
  const ids=['dockScreen','puzzleScreen','recipeParts','recipeNote','engineBlueprint','workBay','dockFeedback','assembleEngine','jobCount','jobTitle','jobObjective','startSalvage','moonTeaser','dockBack','puzzleTitle','puzzleLesson','requiredModules','puzzleIntro','droneEnergy','droneEnergyBar','puzzleStatusTitle','puzzleStatusText','puzzleRetry','claimComponent','circuitBoard','puzzleBack','locationLabel'];
  const el=Object.fromEntries(ids.map(id=>[id,doc.getElementById(id)]));
  let puzzle=null,jobId=null,phase='playing',flowPath=[],flowProgress=0,token=0;
+ const tutorial=createOrbitTutorial({getState,save,document:doc,onPause:tap=>{
+  el.puzzleScreen.dataset.tutorialPaused=true;
+  for(const [index,node] of [...el.circuitBoard.children].entries())if(puzzle?.board[index].kind==='connector')node.disabled=index!==tap;
+ },onResume:()=>{
+  el.puzzleScreen.dataset.tutorialPaused=false;
+  for(const [index,node] of [...el.circuitBoard.children].entries())if(puzzle?.board[index].kind==='connector')node.disabled=phase!=='playing';
+ }});
  const partName=key=>RECIPE.find(p=>p.key===key)?.name??'';
  function dock({arrivingPart=null,assembled=false}={}) {
   const state=getState();if(!state.orbitUnlocked)return;
-  token++;puzzle=null;state.dockIntroSeen=true;save();setMode('dock');
+  tutorial.cancel();token++;puzzle=null;state.dockIntroSeen=true;save();setMode('dock');
   el.dockScreen.hidden=false;el.puzzleScreen.hidden=true;el.locationLabel.textContent='ОРБИТАЛЬНЫЙ ДОК · 200 КМ';
   el.engineBlueprint.innerHTML=blueprintSvg(state,arrivingPart);
   el.recipeParts.innerHTML=RECIPE.map(p=>`<div class="recipe-part${state.rareParts[p.key]===p.required?' ready':''}"><span>${p.name}</span><strong>${state.rareParts[p.key]} / ${p.required}</strong></div>`).join('');
@@ -71,13 +79,14 @@ export function createOrbitUi({getState,save,setMode,enterGarage,reducedMotion=f
   const power=powerPath(puzzle.board);
   el.puzzleStatusTitle.textContent=phase==='failed'?'ЭНЕРГИЯ ДРОНА ИСЧЕРПАНА':phase==='reward'?partName(getState().salvageReady?.part):phase==='flow'?'СИСТЕМЫ ВОССТАНОВЛЕНЫ':`ПИТАНИЕ: ${power.satisfied} / ${power.required.length} СИСТЕМ`;
   el.puzzleStatusText.textContent=phase==='failed'?'Объект сохранён. Повтор бесплатно.':phase==='reward'?'Найденная деталь → в гнездо двигателя':phase==='flow'?'Источник → сеть → обязательные системы':'Все отмеченные системы должны получать питание. Поворот = 1 энергия.';
-  el.puzzleIntro.hidden=phase!=='playing'||getState().puzzleIntroSeen||jobId!==1;
+  el.puzzleIntro.hidden=true; // Replaced by the contextual demo; no lecture above the board.
   el.puzzleScreen.dataset.phase=phase;updateBoard();
  }
  function startPuzzle() {
+  if(tutorial.active)return;
   const state=getState(),job=currentJob(state);
   if(!state.orbitUnlocked||!job||recipeComplete(state)||state.vacuumEngineBuilt)return;
-  token++;jobId=job.id;puzzle=createPuzzle(job.template);phase=state.salvageReady?'reward':'playing';
+  tutorial.cancel();token++;jobId=job.id;puzzle=createPuzzle(job.template);phase=state.salvageReady?'reward':'playing';
   if(state.salvageReady){puzzle.board.forEach(tile=>tile.rotation=0);puzzle.status='success';}
   flowPath=[];flowProgress=0;setMode('puzzle');el.dockScreen.hidden=true;el.puzzleScreen.hidden=false;
   el.puzzleTitle.textContent=TEMPLATES[job.template].name;
@@ -91,9 +100,10 @@ export function createOrbitUi({getState,save,setMode,enterGarage,reducedMotion=f
    el.circuitBoard.append(node);
   });
   renderPuzzle();doc.defaultView?.scrollTo({top:0,behavior:'instant'});el.puzzleBack.focus({preventScroll:true});
+  if(phase==='playing')tutorial.begin(puzzle.board,jobId);
  }
  function rotate(index) {
-  if(!puzzle||phase!=='playing'||!rotateTile(puzzle,index))return;
+  if(tutorial.active||!puzzle||phase!=='playing'||!rotateTile(puzzle,index))return false;
   if(!getState().puzzleIntroSeen){getState().puzzleIntroSeen=true;save();}
   el.circuitBoard.children[index].animate([{transform:'scale(.91)'},{transform:'scale(1)'}],{duration:reducedMotion?1:160});
   if(puzzle.status==='failed')phase='failed';
@@ -110,14 +120,14 @@ export function createOrbitUi({getState,save,setMode,enterGarage,reducedMotion=f
    };
    requestFrame(tick);
   }
-  renderPuzzle();
+  renderPuzzle();return true;
  }
  el.startSalvage.addEventListener('click',startPuzzle);
- el.circuitBoard.addEventListener('click',event=>{const button=event.target.closest('button[data-tile]');if(button)rotate(Number(button.dataset.tile));});
- el.puzzleRetry.addEventListener('click',()=>{if(phase!=='failed')return;puzzle=retryPuzzle(puzzle);phase='playing';renderPuzzle();});
- el.claimComponent.addEventListener('click',()=>{if(phase!=='reward')return;const part=claimSalvageReward(getState(),jobId);if(part){save();dock({arrivingPart:part});}});
- el.assembleEngine.addEventListener('click',()=>{if(assembleEngine(getState())){save();dock({assembled:true});el.engineBlueprint.animate([{transform:'translateY(-3px)',filter:'brightness(1.6)'},{transform:'translateY(0)',filter:'brightness(1)'}],{duration:reducedMotion?1:1200});}});
- el.puzzleBack.addEventListener('click',dock);
- el.dockBack.addEventListener('click',()=>{token++;el.dockScreen.hidden=true;el.puzzleScreen.hidden=true;enterGarage();});
- return {dock,hide(){token++;el.dockScreen.hidden=true;el.puzzleScreen.hidden=true;}};
+ el.circuitBoard.addEventListener('click',event=>{const button=event.target.closest('button[data-tile]');if(button){const index=Number(button.dataset.tile);if(tutorial.active)tutorial.acceptTap(index,()=>rotate(index));else rotate(index);}});
+ el.puzzleRetry.addEventListener('click',()=>{if(tutorial.active||phase!=='failed')return;puzzle=retryPuzzle(puzzle);phase='playing';renderPuzzle();});
+ el.claimComponent.addEventListener('click',()=>{if(tutorial.active||phase!=='reward')return;const part=claimSalvageReward(getState(),jobId);if(part){save();dock({arrivingPart:part});}});
+ el.assembleEngine.addEventListener('click',()=>{if(!tutorial.active&&assembleEngine(getState())){save();dock({assembled:true});el.engineBlueprint.animate([{transform:'translateY(-3px)',filter:'brightness(1.6)'},{transform:'translateY(0)',filter:'brightness(1)'}],{duration:reducedMotion?1:1200});}});
+ el.puzzleBack.addEventListener('click',()=>{if(!tutorial.active)dock();});
+ el.dockBack.addEventListener('click',()=>{if(tutorial.active)return;token++;el.dockScreen.hidden=true;el.puzzleScreen.hidden=true;enterGarage();});
+ return {dock,hide(){tutorial.cancel();token++;el.dockScreen.hidden=true;el.puzzleScreen.hidden=true;}};
 }

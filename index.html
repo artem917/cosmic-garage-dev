@@ -141,13 +141,22 @@
 
       <section id="puzzleScreen" class="puzzle-screen" aria-labelledby="puzzleTitle" hidden>
         <div class="puzzle-heading"><small id="puzzleLesson">ВНУТРИ ОРБИТАЛЬНОЙ НАХОДКИ</small><h1 id="puzzleTitle"></h1></div>
-        <div class="drone-energy"><span>ЭНЕРГИЯ ДРОНА</span><strong id="droneEnergy"></strong><i><b id="droneEnergyBar"></b></i></div>
+        <div class="drone-energy" id="droneEnergyHud"><span>ЭНЕРГИЯ ДРОНА</span><strong id="droneEnergy"></strong><i><b id="droneEnergyBar"></b></i></div>
         <div id="requiredModules" class="required-modules" aria-label="Все обязательные системы"></div>
         <div class="puzzle-status" id="puzzleStatus" role="status"><strong id="puzzleStatusTitle"></strong><p id="puzzleStatusText"></p><button id="puzzleRetry" class="dock-primary" type="button" hidden>ПОВТОРИТЬ</button><button id="claimComponent" class="dock-primary" type="button" hidden>ЗАБРАТЬ ДЕТАЛЬ</button></div>
         <p id="puzzleIntro" class="puzzle-intro" hidden>↻ Жми провод, чтобы повернуть. ⚡ — питание, цифра — нужная система.</p>
         <div id="circuitBoard" class="circuit-board" role="group" aria-label="Схема 5 на 5: молния — источник, R — обязательное реле, цифры — обязательные системы. Вращаются только незакреплённые провода."></div>
         <button id="puzzleBack" class="dock-secondary" type="button">В ДОК · ОБЪЕКТ СОХРАНИТСЯ</button>
       </section>
+      <aside id="orbitPuzzleTutorial" class="orbit-puzzle-tutorial" role="dialog" aria-labelledby="orbitTutorialText" hidden>
+        <svg class="orbit-tutorial-mask" aria-hidden="true"><path id="orbitTutorialShade" fill-rule="evenodd"/><g id="orbitTutorialSpots"></g></svg>
+        <svg id="orbitTutorialHand" class="orbit-tutorial-hand" viewBox="0 0 48 60" aria-hidden="true" hidden><path d="M18 29 4 15Q0 11 4 7Q8 3 12 7L27 22V18Q27 12 33 14L36 23Q43 22 44 31L42 43 35 54 21 50 13 39Q9 34 12 31Q15 28 18 32Z"/><path class="glove-seam" d="m20 37 8 9m5-23 3 11m-15 15 15 4"/></svg>
+        <div id="orbitTutorialPanel" class="orbit-tutorial-panel">
+          <button id="orbitTutorialClose" class="orbit-tutorial-close" type="button" aria-label="Закрыть обучение ремонту">×</button>
+          <small id="orbitTutorialStep"></small><p id="orbitTutorialText"></p><p id="orbitTutorialNote" hidden></p>
+          <div class="orbit-tutorial-actions"><button id="orbitTutorialNext" type="button">ПОНЯТНО</button><button id="orbitTutorialSkip" type="button">Пропустить</button></div>
+        </div>
+      </aside>
     </main>
 
     <script type="module" src="./startup.js"></script>

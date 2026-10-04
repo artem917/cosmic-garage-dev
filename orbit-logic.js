@@ -1,5 +1,6 @@
 import {ROUTE_END} from './game-logic.js';
 import {TEMPLATES, powerPath} from './circuit-logic.js';
+import {ORBIT_TUTORIAL_FLAGS} from './orbit-tutorial.js';
 
 export const RECIPE = [{key:'nozzle',name:'ВАКУУМНОЕ СОПЛО',required:2},{key:'coil',name:'СВЕРХПРОВОДЯЩАЯ КАТУШКА',required:2},{key:'core',name:'НАВИГАЦИОННОЕ ЯДРО',required:1}];
 const PART_ORDER = ['nozzle','coil','core','nozzle','coil'];
@@ -28,6 +29,10 @@ export function migrateOrbitState(base, raw) {
  }
  const job=currentJob(state), part=nextPart(state);
  if(!old&&job&&part&&raw?.salvageReady?.jobId===job.id&&raw.salvageReady.part===part)state.salvageReady={jobId:job.id,part};
+ // Suppress mechanics already successfully repaired in V1/V2, without trusting the
+ // old one-line puzzleIntroSeen as proof of completing the new interactive demo.
+ const learned=state.salvageCompleted+(state.salvageReady?1:0),thresholds=[1,2,3,3];
+ ORBIT_TUTORIAL_FLAGS.forEach((flag,i)=>{state[flag]=state.orbitUnlocked&&(raw?.[flag]===true||learned>=thresholds[i]);});
  return state;
 }
 export function beginOrbitRun(state) {
