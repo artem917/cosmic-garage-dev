@@ -10,19 +10,20 @@ export const currentJob = state => pendingJobs(state)>0 ? {id:state.salvageCompl
 export const nextPart = state => PART_ORDER.find(key=>state.rareParts[key]<RECIPE.find(p=>p.key===key).required) ?? null;
 
 export function migrateOrbitState(base, raw) {
- const old=raw?.orbitHubVersion!==1;
- const state={...base,orbitHubVersion:1,flightSerial:count(raw?.flightSerial),lastOrbitSerial:count(raw?.lastOrbitSerial),salvageDiscovered:0,salvageCompleted:0,rareParts:{},vacuumEngineBuilt:false,dockIntroSeen:false,salvageReady:null};
+ const old=![1,2].includes(raw?.orbitHubVersion);
+ const state={...base,orbitHubVersion:2,flightSerial:count(raw?.flightSerial),lastOrbitSerial:count(raw?.lastOrbitSerial),salvageDiscovered:0,salvageCompleted:0,rareParts:{},vacuumEngineBuilt:false,dockIntroSeen:false,puzzleIntroSeen:false,salvageReady:null};
  if(!old){
   state.lastOrbitSerial=Math.min(state.flightSerial,state.lastOrbitSerial);
   state.salvageDiscovered=count(raw?.salvageDiscovered);
   state.salvageCompleted=Math.min(state.salvageDiscovered,count(raw?.salvageCompleted));
   state.dockIntroSeen=raw?.dockIntroSeen===true;
+  state.puzzleIntroSeen=raw?.puzzleIntroSeen===true||state.salvageCompleted>0||!!raw?.salvageReady;
  }
  for(const p of RECIPE)state.rareParts[p.key]=old?0:Math.min(p.required,count(raw?.rareParts?.[p.key]));
  state.vacuumEngineBuilt=!old&&raw?.vacuumEngineBuilt===true&&recipeComplete(state);
  if(old&&state.orbitUnlocked)state.salvageDiscovered=1; // One introductory object, never historical item drops.
  if(!state.orbitUnlocked){
-  state.salvageDiscovered=state.salvageCompleted=0;state.vacuumEngineBuilt=false;state.dockIntroSeen=false;
+  state.salvageDiscovered=state.salvageCompleted=0;state.vacuumEngineBuilt=false;state.dockIntroSeen=false;state.puzzleIntroSeen=false;
   for(const p of RECIPE)state.rareParts[p.key]=0;
  }
  const job=currentJob(state), part=nextPart(state);

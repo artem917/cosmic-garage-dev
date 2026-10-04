@@ -12,6 +12,7 @@ import {hazardSvg,HAZARD_NAMES} from './hazard-art.js';
 import {MOBILE_FEEDBACK_QUERY, tutorialTop, pickupTextCovered, createFlightFeedback} from './flight-feedback.js';
 import {migrateOrbitState,beginOrbitRun,discoverOrbitObject,pendingJobs} from './orbit-logic.js';
 import {createOrbitUi} from './orbit-ui.js';
+import {createOrbitVictory,victoryFrame} from './orbit-victory.js';
 
 const SAVE_KEY = "cosmic-garage-active-v2";
 const canvas = document.querySelector("#gameCanvas");
@@ -19,7 +20,7 @@ const ctx = canvas.getContext("2d");
 const dom = Object.fromEntries(
   [
     "scrapValue", "bestValue", "launchCount", "garageStats", "flightHud", "distanceValue",
-    "flightBestValue", "flightProgressBar", "eventToast", "eventTitle", "eventMessage", "eventResult", "cargoHud", "cargoGain", "fuelHint", "dockEntry", "resultDockButton", "orbitUnlock",
+    "flightBestValue", "flightProgressBar", "eventToast", "eventTitle", "eventMessage", "eventResult", "cargoHud", "cargoGain", "fuelHint", "dockEntry", "resultDockButton", "orbitUnlock", "orbitVictory", "orbitDiscovery",
     "garagePanel", "upgradeList", "launchButton", "launchEstimate", "resultCard", "resultKicker",
     "resultTitle", "resultDistance", "resultBreakdown", "resultReward", "collectButton", "resetButton",
     "locationLabel", "machineNote", "flightCaption", "upgradePop", "benchHint", "resultNext", "goalStatus", "routeMap", "fuelValue", "hullValue", "cargoValue", "objectLayer", "runClock", "goalDetail", "recordMarker", "recordBanner", "upgradeExplanation", "upgradeExplanationText", "upgradeExplanationTitle", "infoClose", "tutorialOverlay", "tutorialSpot", "tutorialBubble", "tutorialTitle", "tutorialText", "tutorialContinue", "tutorialSkip", "fuelHud", "fuelMeter", "fuelGain", "altitudeCapsule", "stageBanner", "hullHud", "speedValue", "tutorialClose", "collisionSuppress",
@@ -58,9 +59,10 @@ const orbitUi=createOrbitUi({getState:()=>state,save:saveState,setMode,enterGara
  dom.machineNote.hidden=false;dom.locationLabel.textContent='ГАРАЖ · ОТСЕК 07';renderGarageUi();
  dom.dockEntry.focus({preventScroll:true});
 },reducedMotion});
+const orbitVictory=createOrbitVictory({panel:dom.orbitVictory,unlock:dom.orbitUnlock,discovery:dom.orbitDiscovery,onFinished:showFlightResult});
 
 function openDock(){
- if(!state.orbitUnlocked||mode==='launch')return;
+ if(!state.orbitUnlocked||mode==='launch'||mode==='orbitArrival')return;
  hideInfo();dom.garagePanel.hidden=true;dom.garageStats.hidden=true;dom.resultCard.hidden=true;dom.orbitUnlock.hidden=true;
  orbitUi.dock();
 }
@@ -119,7 +121,7 @@ function nextEffect(key,level) {
 function loadState() {
  try {
   const raw=JSON.parse(localStorage.getItem(SAVE_KEY)??localStorage.getItem("cosmic-garage-proof-v1")),migrated=migrateOrbitState(sanitizeState(raw),raw);
-  if(raw&&(raw.saveVersion!==5||raw.orbitHubVersion!==1)){try{localStorage.setItem(SAVE_KEY,JSON.stringify(migrated));}catch{/* Keep loaded progress even when storage is read-only. */}}
+  if(raw&&(raw.saveVersion!==5||raw.orbitHubVersion!==2)){try{localStorage.setItem(SAVE_KEY,JSON.stringify(migrated));}catch{/* Keep loaded progress even when storage is read-only. */}}
   return migrated;
  }
  catch{return migrateOrbitState(createInitialState(),null);}
@@ -275,6 +277,7 @@ function startLaunch(){
  if(mode!=="garage")return;
  hideInfo();
  dom.orbitUnlock.hidden=true;orbitUi.hide();
+ orbitVictory.hide();
  const runId=beginOrbitRun(state);saveState();
  const rawSeed=new URLSearchParams(location.search).get("seed");
  const rng=rawSeed!==null&&Number.isFinite(Number(rawSeed))?seededRandom(Number(rawSeed)):Math.random;
@@ -304,6 +307,23 @@ function finishLaunch() {
  launch.discovery=discoverOrbitObject(state,launch.id,p);
  launch.quality=p.reason==="orbit"?"exceptional":p.distance>launch.oldBest?"good":"mediocre";
  recordFlight(state,p);saveState();
+ if(p.reason==='orbit'){
+  // The run has genuinely ended: never run another hazard step during arrival.
+  setMode('orbitArrival');launch.arrivalStart=performance.now();
+  dom.locationLabel.textContent='ОРБИТА · 200 КМ';
+  dom.flightHud.hidden=true;dom.objectLayer.hidden=true;dom.eventToast.hidden=true;
+  dom.resultCard.hidden=true;dom.tutorialOverlay.hidden=true;dom.recordBanner.hidden=true;dom.stageBanner.hidden=true;dom.flightCaption.hidden=true;
+  flightFeedback.reset();dom.fuelHint.hidden=true;particles=[];
+  burst(canvasWidth*.5,canvasHeight*.53,24,'#b8f8df',1.5);
+  orbitVictory.begin(launch.discovery.first,launch.arrivalStart);
+  updateGoal(p.distance);return;
+ }
+ showFlightResult();
+}
+
+function showFlightResult(){
+ if(!launch)return;
+ const p=launch.plan;
  setMode("result");launch.resultStart=performance.now();
  dom.locationLabel.textContent=layerFor(p.distance).name.toUpperCase()+" · РЕЗУЛЬТАТ";
  dom.flightHud.hidden=true;dom.objectLayer.hidden=true;dom.eventToast.hidden=true;
@@ -323,10 +343,6 @@ function finishLaunch() {
  dom.resultDockButton.hidden=p.reason!=='orbit';
  dom.collectButton.textContent=p.reason==='orbit'?'ЗАБРАТЬ · ГАРАЖ':'ЗАБРАТЬ И В ГАРАЖ';
  if(p.reason==='orbit')dom.resultNext.textContent=`${launch.discovery.first?'ДОК ОТКРЫТ · ':''}НОВАЯ НАХОДКА · ОБЪЕКТОВ ДЛЯ РАЗБОРА: ${pendingJobs(state)}`;
- if(launch.discovery.first){
-  dom.orbitUnlock.hidden=false;
-  setTimeout(()=>{if(mode==='result')dom.orbitUnlock.hidden=true;},1600);
- }
  dom.resultCard.hidden=false;dom.flightCaption.hidden=true;
  updateGoal(p.distance);dom.collectButton.focus({preventScroll:true});
 }
@@ -400,7 +416,7 @@ function resetGame() {
   dom.resetButton.textContent = "DEV RESET";
   dom.resetButton.removeAttribute("aria-label");
   state = migrateOrbitState(createInitialState(),null);collisionSession.shown=false;
-  orbitUi.hide();dom.orbitUnlock.hidden=true;
+  orbitUi.hide();orbitVictory.hide();dom.orbitUnlock.hidden=true;
   hideInfo();dom.tutorialOverlay.hidden=true;dom.recordBanner.hidden=true;dom.stageBanner.hidden=true;shell.dataset.paused="false";
   dom.objectLayer.hidden=true;
   targetX=.5;keyboardDirection=0;
@@ -637,6 +653,7 @@ function drawLaunch(now,dt) {
  const activeDt=r.paused?0:dt;
  const cosmeticDt=Math.min(dt,.05);
  stepFlight(r,activeDt,run=>launch.controls.sample(run.time));
+ if(r.ended==='orbit'){finishLaunch();return;}
  if(keyboardActive)targetX=r.targetX;
  const layer=layerFor(r.altitude);
  setText(dom.locationLabel,layer.name.toUpperCase()+" · ПОЛЁТ");
@@ -988,6 +1005,19 @@ function mixColor(a, b, t) {
   return `rgb(${values.join(",")})`;
 }
 
+function drawOrbitArrival(now,dt){
+ const w=canvasWidth,h=canvasHeight,view=victoryFrame(launch.discovery.first,now-launch.arrivalStart);
+ const ease=reducedMotion?1:1-(1-view.coast)**3;
+ const sky=ctx.createLinearGradient(0,0,0,h);sky.addColorStop(0,'#06162f');sky.addColorStop(.6,'#09243b');sky.addColorStop(1,'#3a797d');ctx.fillStyle=sky;ctx.fillRect(0,0,w,h);
+ ctx.fillStyle='#c9ead8';for(let i=0;i<24;i++){const x=((i*73+31)%347)/347*w,y=((i*47+23)%281)/281*h*.59;ctx.globalAlpha=.25+(i%3)*.2;ctx.fillRect(x,y,i%4===0?2:1,1);}ctx.globalAlpha=1;
+ ctx.save();ctx.translate(w*.5,h*1.10);
+ const planet=ctx.createLinearGradient(0,-h*.45,0,0);planet.addColorStop(0,'#b0f5dc');planet.addColorStop(.08,'#54bfc6');planet.addColorStop(.4,'#347f9c');planet.addColorStop(1,'#173b62');
+ ctx.fillStyle=planet;ctx.shadowColor='#98ffdc';ctx.shadowBlur=reducedMotion?0:26;ctx.beginPath();ctx.ellipse(0,0,w*.98,h*.43,0,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+ ctx.fillStyle='#a5c09c';ctx.beginPath();ctx.ellipse(-w*.24,-h*.30,w*.17,h*.045,-.2,0,Math.PI*2);ctx.ellipse(w*.22,-h*.34,w*.13,h*.033,.15,0,Math.PI*2);ctx.fill();ctx.restore();
+ drawRocket(w*(launch.run.x+(0.5-launch.run.x)*ease),h*(.60-.025*ease),Math.min(.64,w/570),reducedMotion?0:Math.sin(now*.0012)*.018,.16,state.upgrades,now);
+ updateParticles(Math.min(.03,dt));drawParticles();
+}
+
 function frame(now) {
   // Catch up low-FPS visible frames with fixed simulation substeps; hidden tabs pause.
   const dt = Math.max(0, (now - lastFrame) / 1000);
@@ -995,6 +1025,7 @@ function frame(now) {
   if(mode==='dock'||mode==='puzzle'){requestAnimationFrame(frame);return;}
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
   if (mode === "launch") drawLaunch(now, dt);
+  else if(mode==='orbitArrival'&&launch){drawOrbitArrival(now,dt);orbitVictory.tick(now);}
   else if (mode === "result" && launch) {
     updateParticles(dt);
     drawFlightEnd(now);

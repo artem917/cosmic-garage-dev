@@ -80,7 +80,11 @@
         <div class="upgrade-pop" id="upgradePop" aria-live="polite" hidden></div>
         <div id="recordBanner" class="record-banner" aria-live="polite" hidden>НОВЫЙ РЕКОРД!</div>
         <div id="stageBanner" class="stage-banner" role="status" hidden></div>
-        <div id="orbitUnlock" class="orbit-unlock" role="status" hidden><span aria-hidden="true">✦</span><strong>ОРБИТАЛЬНЫЙ ДОК ОТКРЫТ</strong><small>200 КМ · НОВАЯ МАСТЕРСКАЯ НАД ЗЕМЛЁЙ</small></div>
+        <div id="orbitVictory" class="orbit-victory" role="status" hidden>
+          <div class="orbit-arrival-title"><small>ЗЕМЛЯ ОСТАЛАСЬ ВНИЗУ</small><strong>ОРБИТА ДОСТИГНУТА</strong><b>200.0 КМ</b></div>
+          <div id="orbitUnlock" class="orbit-arrival-unlock" hidden><strong>ОРБИТАЛЬНЫЙ ДОК ОТКРЫТ</strong><small>НОВАЯ МАСТЕРСКАЯ НАД ЗЕМЛЁЙ</small></div>
+          <p id="orbitDiscovery" class="orbit-arrival-discovery" hidden>ОБЪЕКТ ДЛЯ РАЗБОРА ОБНАРУЖЕН</p>
+        </div>
         <div id="tutorialOverlay" class="tutorial-overlay" hidden>
           <div id="tutorialSpot" class="tutorial-spot"></div>
           <section id="tutorialBubble" class="tutorial-bubble" role="dialog" aria-modal="true" aria-labelledby="tutorialTitle" aria-describedby="tutorialText">
@@ -127,23 +131,21 @@
       </section>
 
       <section id="dockScreen" class="dock-screen" aria-labelledby="dockTitle" hidden>
-        <p class="eyebrow">ОРБИТА · 200 КМ</p><h1 id="dockTitle">ОРБИТАЛЬНЫЙ ДОК</h1>
-        <p class="dock-intro" id="dockIntro">Старые спутники — новые детали. Разбери находку и собери двигатель для дальнего пути.</p>
-        <div class="dock-art" aria-label="Самодельный орбитальный док над Землёй" role="img">
-          <div class="dock-earth"></div><div class="dock-stars"></div><div class="dock-cable"></div><div class="dock-platform"></div>
-          <div class="dock-station"><span>07</span><i></i></div><div class="dock-satellite"><i></i><b></b><i></i></div>
-        </div>
-        <section class="dock-recipe" aria-labelledby="recipeTitle"><h2 id="recipeTitle">ВАКУУМНЫЙ ДВИГАТЕЛЬ Mk I</h2><div id="recipeParts"></div><p id="recipeNote">Редкие детали из орбитальных находок. Не покупаются за лом.</p><button id="assembleEngine" class="dock-primary" type="button" hidden>СОБРАТЬ ДВИГАТЕЛЬ</button></section>
-        <section class="dock-job"><strong id="jobCount"></strong><h2 id="jobTitle"></h2><p id="jobObjective"></p><button id="startSalvage" class="dock-primary" type="button" hidden>НАЧАТЬ РЕМОНТ / РАЗБОР</button></section>
+        <header class="dock-heading"><div><p class="eyebrow">МАСТЕРСКАЯ 07 · ОРБИТА</p><h1 id="dockTitle">ОРБИТАЛЬНЫЙ ДОК</h1></div><span class="dock-pressure" aria-hidden="true">● СТАПЕЛЬ</span></header>
+        <p id="dockFeedback" class="dock-feedback" role="status" hidden></p>
+        <section class="dock-workshop" aria-labelledby="jobTitle"><div id="workBay" class="work-bay"></div><div class="dock-job"><strong id="jobCount"></strong><h2 id="jobTitle"></h2><p id="jobObjective"></p><button id="startSalvage" class="dock-primary" type="button" hidden>НАЧАТЬ РАЗБОР</button></div></section>
+        <section class="dock-recipe" aria-labelledby="recipeTitle"><div class="blueprint-heading"><small>СОБИРАЕМ ДЛЯ ДАЛЬНЕГО ПУТИ</small><h2 id="recipeTitle">ВАКУУМНЫЙ ДВИГАТЕЛЬ Mk I</h2></div><div id="engineBlueprint"></div><div id="recipeParts"></div><p id="recipeNote">Пять гнёзд — пять найденных деталей.</p><button id="assembleEngine" class="dock-primary" type="button" hidden>СОБРАТЬ ДВИГАТЕЛЬ</button></section>
         <section id="moonTeaser" class="moon-teaser" hidden><small>СЛЕДУЮЩАЯ ЦЕЛЬ</small><h2>☾ ЛУНА</h2><strong>~384 400 КМ</strong><p>Вакуумный двигатель — ключ к дальнему пути.<br>Курс ещё не проложен.</p></section>
         <button id="dockBack" class="dock-secondary" type="button">В ГАРАЖ</button>
       </section>
 
       <section id="puzzleScreen" class="puzzle-screen" aria-labelledby="puzzleTitle" hidden>
-        <div class="puzzle-heading"><small>ВНУТРИ ОРБИТАЛЬНОЙ НАХОДКИ</small><h1 id="puzzleTitle"></h1></div>
+        <div class="puzzle-heading"><small id="puzzleLesson">ВНУТРИ ОРБИТАЛЬНОЙ НАХОДКИ</small><h1 id="puzzleTitle"></h1></div>
         <div class="drone-energy"><span>ЭНЕРГИЯ ДРОНА</span><strong id="droneEnergy"></strong><i><b id="droneEnergyBar"></b></i></div>
+        <div id="requiredModules" class="required-modules" aria-label="Все обязательные системы"></div>
         <div class="puzzle-status" id="puzzleStatus" role="status"><strong id="puzzleStatusTitle"></strong><p id="puzzleStatusText"></p><button id="puzzleRetry" class="dock-primary" type="button" hidden>ПОВТОРИТЬ</button><button id="claimComponent" class="dock-primary" type="button" hidden>ЗАБРАТЬ ДЕТАЛЬ</button></div>
-        <div id="circuitBoard" class="circuit-board" role="group" aria-label="Схема 5 на 5: источник сверху слева, отсек снизу справа"></div>
+        <p id="puzzleIntro" class="puzzle-intro" hidden>↻ Жми провод, чтобы повернуть. ⚡ — питание, цифра — нужная система.</p>
+        <div id="circuitBoard" class="circuit-board" role="group" aria-label="Схема 5 на 5: молния — источник, R — обязательное реле, цифры — обязательные системы. Вращаются только незакреплённые провода."></div>
         <button id="puzzleBack" class="dock-secondary" type="button">В ДОК · ОБЪЕКТ СОХРАНИТСЯ</button>
       </section>
     </main>
