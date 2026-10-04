@@ -455,3 +455,20 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
 /* Opt-in QA only; absent from the normal player URL and never intercepts input. */
 .dev-thumb { display:none; }
 .game-shell[data-mode="launch"][data-thumb-test="true"] .dev-thumb { display:block; pointer-events:none; position:absolute; z-index:7; top:77%; left:50%; width:72px; height:100px; transform:translateX(-50%); border:2px dashed #ffe5b5; border-radius:50% 50% 35% 35%; background:#dfac7bb3; }
+
+/* Mobile feedback lives above the thumb; overlays never resize the playfield. */
+#fuelHint, #cargoGain { display:none; }
+@media (max-width:600px) {
+ .game-shell[data-mode="launch"] .flight-caption { display:none; }
+ .game-shell[data-mode="launch"] .event-toast { top:46%; bottom:auto; left:10px; right:25px; }
+ .game-shell[data-mode="launch"] .event-toast strong { font-size:.69rem; }
+ .game-shell[data-mode="launch"] .record-banner { top:137px; }
+ .game-shell[data-mode="launch"] .stage-banner { top:137px; left:10%; right:10%; }
+ .game-shell[data-mode="launch"] .stage-banner strong { font-size:.9rem; letter-spacing:.04em; }
+ #cargoHud { position:relative; border-radius:4px; padding:4px 2px; }
+ #cargoGain { display:block; position:absolute; z-index:12; top:100%; right:0; margin-top:5px; padding:4px 6px; border-radius:6px; background:#ffda77; color:#173d36; font-size:.78rem; white-space:nowrap; pointer-events:none; }
+ #fuelHint { display:block; position:absolute; left:0; top:100%; margin-top:8px; padding:3px 5px; white-space:nowrap; background:#713e2e; color:#ffe1a5; border-radius:4px; font-size:.57rem; pointer-events:none; }
+ #fuelHud:has(#fuelGain:not([hidden])) #fuelHint { visibility:hidden; }
+ .flight-object[data-lower-text="true"] small { visibility:hidden; }
+ .tutorial-bubble { top:auto !important; bottom:calc(40% + 55px); max-height:calc(60% - 67px); overflow-y:auto; overscroll-behavior:contain; }
+}

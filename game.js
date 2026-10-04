@@ -9,6 +9,7 @@ import {
 } from "./game-logic.js";
 import {bindUpgradeFeedback,tooltipPosition} from './upgrade-feedback.js';
 import {hazardSvg,HAZARD_NAMES} from './hazard-art.js';
+import {MOBILE_FEEDBACK_QUERY, tutorialTop, pickupTextCovered, createFlightFeedback} from './flight-feedback.js';
 
 const SAVE_KEY = "cosmic-garage-active-v2";
 const canvas = document.querySelector("#gameCanvas");
@@ -16,7 +17,7 @@ const ctx = canvas.getContext("2d");
 const dom = Object.fromEntries(
   [
     "scrapValue", "bestValue", "launchCount", "garageStats", "flightHud", "distanceValue",
-    "flightBestValue", "flightProgressBar", "eventToast", "eventTitle", "eventMessage", "eventResult",
+    "flightBestValue", "flightProgressBar", "eventToast", "eventTitle", "eventMessage", "eventResult", "cargoHud", "cargoGain", "fuelHint",
     "garagePanel", "upgradeList", "launchButton", "launchEstimate", "resultCard", "resultKicker",
     "resultTitle", "resultDistance", "resultBreakdown", "resultReward", "collectButton", "resetButton",
     "locationLabel", "machineNote", "flightCaption", "upgradePop", "benchHint", "resultNext", "goalStatus", "routeMap", "fuelValue", "hullValue", "cargoValue", "objectLayer", "runClock", "goalDetail", "recordMarker", "recordBanner", "upgradeExplanation", "upgradeExplanationText", "upgradeExplanationTitle", "infoClose", "tutorialOverlay", "tutorialSpot", "tutorialBubble", "tutorialTitle", "tutorialText", "tutorialContinue", "tutorialSkip", "fuelHud", "fuelMeter", "fuelGain", "altitudeCapsule", "stageBanner", "hullHud", "speedValue", "tutorialClose", "collisionSuppress",
@@ -37,6 +38,8 @@ let lastFrame = performance.now();
 const shell = document.querySelector(".game-shell");
 shell.dataset.thumbTest=new URLSearchParams(location.search).get('devThumb')==='1';
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const mobileFeedback = window.matchMedia(MOBILE_FEEDBACK_QUERY);
+const flightFeedback = createFlightFeedback(dom, () => mobileFeedback.matches, reducedMotion);
 const tallies = new Map();
 let installation = null;
 let resetArmedUntil = 0;
@@ -195,7 +198,7 @@ function positionTutorial(){
  const rect=node?.getBoundingClientRect();
  const x=rect?rect.left-stage.left+rect.width/2:launch.run.x*canvasWidth,y=rect?rect.top-stage.top+rect.height/2:canvasHeight*.60;
  dom.tutorialSpot.style.left=`${x-42}px`;dom.tutorialSpot.style.top=`${y-45}px`;
- dom.tutorialBubble.style.top=`${Math.max(100,Math.min(y+55,canvasHeight-dom.tutorialBubble.offsetHeight-14))}px`;
+ dom.tutorialBubble.style.top=`${tutorialTop({mobile:mobileFeedback.matches,height:canvasHeight,bubbleHeight:dom.tutorialBubble.offsetHeight,anchorY:y})}px`;
  launch.tutorialLayout=`${canvasWidth}:${canvasHeight}`;
 }
 function showTutorial(object){
@@ -261,7 +264,7 @@ function startLaunch(){
  const rng=rawSeed!==null&&Number.isFinite(Number(rawSeed))?seededRandom(Number(rawSeed)):Math.random;
  launch={run:createFlight(state.upgrades,createCourse(rng,statsFor(state.upgrades))),plan:null,
   oldBest:state.bestAltitude,recordShown:false,recordUntil:0,start:performance.now(),resultStart:0,
-  impactDone:false,quality:"mediocre",feedbackUntil:0,accumulator:0,tutorial:null,tutorialCooldown:0,lastTutorialChunk:-1,controls:createControlTimeline()};
+  impactDone:false,quality:"mediocre",accumulator:0,tutorial:null,tutorialCooldown:0,lastTutorialChunk:-1,controls:createControlTimeline()};
  armCollisionTutorial(launch.run,state,collisionSession);
  targetX=.5;keyboardDirection=0;keyboardActive=false;heldKeys.clear();objectNodes=new Map();dom.objectLayer.replaceChildren();
  setMode("launch");particles=[];shell.dataset.paused="false";
@@ -272,7 +275,7 @@ function startLaunch(){
  dom.recordMarker.style.bottom=`${altitudeKm(launch.oldBest)/2}%`;
  dom.recordMarker.setAttribute("aria-label",`Предыдущий рекорд ${formatAltitude(launch.oldBest)} км`);
  dom.launchButton.disabled=true;dom.machineNote.hidden=true;dom.upgradePop.hidden=true;
- dom.fuelGain.hidden=true;
+ flightFeedback.reset();dom.fuelHint.hidden=true;
  dom.stageBanner.hidden=true;launch.stage=0;launch.stageUntil=0;
  dom.flightCaption.hidden=false;dom.flightCaption.textContent="РУЛИ ↔ · ПОДЪЁМ АВТОМАТИЧЕСКИЙ";
  canvas.focus({preventScroll:true});lastFrame=performance.now();updateGoal(0);drawLaunch(lastFrame,0);
@@ -287,6 +290,7 @@ function finishLaunch() {
  setMode("result");launch.resultStart=performance.now();
  dom.locationLabel.textContent=layerFor(p.distance).name.toUpperCase()+" · РЕЗУЛЬТАТ";
  dom.flightHud.hidden=true;dom.objectLayer.hidden=true;dom.eventToast.hidden=true;
+ flightFeedback.reset();dom.fuelHint.hidden=true;
  dom.tutorialOverlay.hidden=true;dom.recordBanner.hidden=true;dom.stageBanner.hidden=true;
  dom.resultKicker.textContent=p.distance>launch.oldBest?"НОВЫЙ РЕКОРД!":"РЕЗУЛЬТАТ ПОЛЁТА";
  dom.resultCard.dataset.quality=launch.quality;
@@ -631,6 +635,7 @@ function drawLaunch(now,dt) {
  dom.altitudeCapsule.setAttribute("aria-valuenow",altitudeKm(r.altitude).toFixed(1));
  dom.fuelMeter.style.transform=`scaleX(${r.fuel/Math.max(r.stats.fuel,r.fuel)})`;
  dom.fuelValue.parentElement.classList.toggle("low",r.fuel<5);
+ dom.fuelHint.hidden=!mobileFeedback.matches||r.fuel>=10;
  updateGoal(r.altitude);
  const view=cameraView(r,canvasHeight),rocketY=view.rocketY,scale=view.scale;
  // Render only the activated immediate chunk; future chunks stay data-only.
@@ -646,6 +651,7 @@ function drawLaunch(now,dt) {
   node.hidden=o.done||y<95||y>canvasHeight;
   if(!node.hidden){
    node.style.left=`${objectX(o,r)*100}%`;node.style.transform=`translate(-50%,calc(${y}px - 50%))`;
+   node.dataset.lowerText=pickupTextCovered(mobileFeedback.matches,y,canvasHeight);
    if(o.type==='hazard'){node.style.height=`${view.flow*.24}px`;node.dataset.active=hazardActive(o,r);}
   }
  }
@@ -667,27 +673,14 @@ function drawLaunch(now,dt) {
   const count=event.type==='hazard'?({light:10,serious:30,heavy:52})[event.impact]:14;
   burst(event.x*canvasWidth,view.worldY(event.altitude),count,event.type==="hazard"?"#ff9769":event.type==="fuel"?"#94f4de":"#ffda77",event.impact==='heavy'?5:3);
   if(event.type==='hazard')dom.hullHud.animate([{transform:`scale(${event.impact==='heavy'?1.22:1.12})`,backgroundColor:'#ff7355'},{transform:'scale(1)',backgroundColor:'transparent'}],{duration:event.impact==='light'?250:550});
-  if(event.type==="fuel"){
-   dom.fuelGain.textContent=`+${event.gain.toFixed(1)} с`;dom.fuelGain.hidden=false;launch.fuelFeedbackUntil=now+1400;
-   dom.fuelHud.getAnimations().forEach(a=>a.cancel());
-   dom.fuelHud.animate([{backgroundColor:"#97f4c9",color:"#153d34",transform:"scale(1.07)"},{backgroundColor:"#133a36",color:"#a1f4d8",transform:"scale(1)"}],{duration:1000});
-   dom.fuelGain.getAnimations().forEach(a=>a.cancel());
-   dom.fuelGain.animate([{opacity:1,transform:"translateY(0)"},{opacity:1,transform:"translateY(-7px)",offset:.75},{opacity:0,transform:"translateY(-12px)"}],{duration:1400});
-   // Animate the meter upward, then let the authoritative value continue its normal burn.
-   const denominator=Math.max(r.stats.fuel,event.after);
-   dom.fuelMeter.animate([{transform:`scaleX(${event.before/denominator})`},{transform:`scaleX(${event.after/denominator})`}],{duration:260});
-  }
-  dom.eventTitle.textContent=event.type==="hazard"?(damageState(r)===3?"ПОСЛЕДНЯЯ СЕКЦИЯ":event.impact==='heavy'?"ТЯЖЁЛЫЙ УДАР":"УДАР — ВЫРУЛИВАЙ"):"ПОДОБРАНО";
-  dom.eventMessage.textContent=event.text;dom.eventResult.textContent="";
-  dom.eventToast.dataset.impact=event.type==="hazard"?"hit":"clear";
-  dom.eventToast.hidden=false;launch.feedbackUntil=now+1250;
+  flightFeedback.show(event,now,r,damageState(r)===3?"ПОСЛЕДНЯЯ СЕКЦИЯ":event.impact==='heavy'?"ТЯЖЁЛЫЙ УДАР":"УДАР — ВЫРУЛИВАЙ");
  }
- if(now>launch.feedbackUntil)dom.eventToast.hidden=true;
- if(now>(launch.fuelFeedbackUntil??0))dom.fuelGain.hidden=true;
+ flightFeedback.tick(now);
  if(!launch.recordShown&&r.altitude>=Math.max(25,launch.oldBest+1)){
   launch.recordShown=true;launch.recordUntil=r.time+2;dom.recordBanner.textContent="НОВЫЙ РЕКОРД!";
  }
  dom.recordBanner.hidden=r.time>launch.recordUntil||!launch.recordShown;
+ if(mobileFeedback.matches&&!dom.stageBanner.hidden)dom.recordBanner.hidden=true;
  setText(dom.flightCaption,`${damage===3?'ПОСЛЕДНИЙ ШАНС · ':''}${r.fuel<10?"ИЩИ ТОПЛИВО":"ИЩИ ПРОХОД · РУЛИ ↔"}`);
  if(acceptCollisionTutorial(r,collisionSession))showTutorial({type:"collision",chunk:-1});
  if(!r.paused&&!r.ended&&r.time>=launch.tutorialCooldown){
