@@ -5,9 +5,10 @@ import {
   sanitizeState,
   upgradeCost,
   statsFor,
-  createFlight, createCourse, seededRandom, stepFlight, flightResult, layerFor, nextMilestone, MILESTONES, clamp, progressFor, TUTORIAL_ORDER, TUTORIAL_COPY, completeTutorial, tutorialCandidate, cameraView, pointerControl, altitudeGauge, createControlTimeline, keyboardControl, objectX, damageState,
+  createFlight, createCourse, seededRandom, stepFlight, flightResult, layerFor, nextMilestone, MILESTONES, clamp, progressFor, TUTORIAL_ORDER, TUTORIAL_COPY, completeTutorial, tutorialCandidate, cameraView, pointerControl, altitudeGauge, createControlTimeline, keyboardControl, objectX, damageState, hazardActive, DAMAGE_TIERS,
 } from "./game-logic.js";
 import {bindUpgradeFeedback,tooltipPosition} from './upgrade-feedback.js';
+import {hazardSvg,HAZARD_NAMES} from './hazard-art.js';
 
 const SAVE_KEY = "cosmic-garage-active-v2";
 const canvas = document.querySelector("#gameCanvas");
@@ -33,6 +34,7 @@ let canvasHeight = 0;
 let dpr = 1;
 let lastFrame = performance.now();
 const shell = document.querySelector(".game-shell");
+shell.dataset.thumbTest=new URLSearchParams(location.search).get('devThumb')==='1';
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const tallies = new Map();
 let installation = null;
@@ -216,9 +218,9 @@ function makeObjectNode(o){
  const node=document.createElement("div");
  node.className="flight-object "+o.type;node.dataset.type=o.type;node.dataset.chunk=o.chunk??0;
  node.setAttribute("role","img");
- node.setAttribute("aria-label",({fuel:"Топливо +6 с",scrap:"Лом +10",salvage:"Ценный лом +32",hazard:"Опасный обломок"})[o.type]);
- node.innerHTML=({fuel:'<i>▰</i><small>+6 с</small>',scrap:'<i>◆</i><small>+10</small>',salvage:'<i>▣</i><small>+32</small>',hazard:'<i>⚠</i>'})[o.type];
- if(o.width){node.classList.add('wall-piece');node.style.width=`${o.width*100}%`;}
+ node.setAttribute("aria-label",o.type==='hazard'?`${HAZARD_NAMES[o.skin]} · −${DAMAGE_TIERS[o.tier]} HP`:({fuel:"Топливо +6 с",scrap:"Лом +3",salvage:"Ценный лом +8"})[o.type]);
+ node.innerHTML=o.type==='hazard'?hazardSvg(o.skin):({fuel:'<i>▰</i><small>+6 с</small>',scrap:'<i>◆</i><small>+3</small>',salvage:'<i>▣</i><small>+8</small>'})[o.type];
+ if(o.width){node.classList.add('thematic-hazard');node.dataset.skin=o.skin;node.dataset.tier=o.tier;node.style.width=`${o.width*100}%`;}
  node.hidden=true;dom.objectLayer.append(node);objectNodes.set(o.id,node);return node;
 }
 
@@ -266,7 +268,7 @@ function startLaunch(){
 
 function finishLaunch() {
  if(mode!=="launch")return;
- launch.plan=flightResult(launch.run,state.launches);
+ launch.plan=flightResult(launch.run,state.launches,state.claimedMilestones,state.orbitBonusClaimed);
  const p=launch.plan;
  launch.quality=p.reason==="orbit"?"exceptional":p.distance>launch.oldBest?"good":"mediocre";
  state.bestAltitude=Math.max(state.bestAltitude,p.distance);saveState();
@@ -280,7 +282,8 @@ function finishLaunch() {
  tally(dom.resultDistance,0,p.distance,300);tally(dom.resultReward,0,p.reward,300);
  dom.resultBreakdown.innerHTML=`
  <div class="result-line"><span>Рекорд · время</span><strong>${state.bestAltitude} м · ${p.duration.toFixed(1)} с</strong></div>
- <div class="result-line"><span>Подъём + груз</span><strong>${p.base} + ${p.cargo} лома</strong></div>
+ <div class="result-line"><span>Полёт / груз</span><strong>${p.base} / ${p.cargo} лома</strong></div>
+ <div class="result-line"><span>Новые рубежи / первая Орбита</span><strong>${p.milestoneBonus} / ${p.orbitBonus} лома</strong></div>
  <div class="result-line"><span>Ценный лом · канистры · удары</span><strong>${p.salvage} · ${p.fuelPickups} · ${p.hits}</strong></div>
  ${p.firstFlightBonus?'<div class="result-line"><span>На первую деталь</span><strong>+'+p.firstFlightBonus+' лома</strong></div>':""}`;
  dom.resultNext.textContent=p.next
@@ -298,6 +301,8 @@ function collectReward() {
   const source = dom.resultReward.getBoundingClientRect();
   state.scrap += plan.reward;
   state.launches += 1;
+  state.claimedMilestones=[...new Set([...state.claimedMilestones,...plan.milestones])];
+  if(plan.orbitBonus)state.orbitBonusClaimed=true;
   state.bestAltitude = Math.max(state.bestAltitude, plan.distance);
   saveState();
   setMode("garage");
@@ -595,7 +600,13 @@ function drawLaunch(now,dt) {
  const layer=layerFor(r.altitude);
  setText(dom.locationLabel,layer.name.toUpperCase()+" · ПОЛЁТ");
  const stage=MILESTONES.indexOf(layer);
- if(stage>launch.stage){launch.stage=stage;launch.stageUntil=r.time+1;dom.stageBanner.textContent=`${layer.name.toUpperCase()} · ЭТАП ${stage+1}`;}
+ if(stage>launch.stage){
+  launch.stage=stage;launch.stageUntil=r.time+1;
+  const first=layer.altitude>launch.oldBest;
+  dom.stageBanner.innerHTML=`<strong>${layer.name.toUpperCase()}</strong><small>${first?'НОВЫЙ РУБЕЖ ОТКРЫТ':'ЭТАП '+(stage+1)}</small>`;
+  dom.stageBanner.dataset.first=first;
+  burst(canvasWidth*.5,canvasHeight*.23,first?35:18,'#b7f6e1',2.2);
+ }
  dom.stageBanner.hidden=r.time>=launch.stageUntil;
  const damage=damageState(r);dom.hullHud.dataset.damage=damage;
  setText(dom.distanceValue,Math.floor(r.altitude));
@@ -611,14 +622,20 @@ function drawLaunch(now,dt) {
  updateGoal(r.altitude);
  const view=cameraView(r,canvasHeight),rocketY=view.rocketY,scale=view.scale;
  // Render only the activated immediate chunk; future chunks stay data-only.
- drawSky(r.altitude/1000,r.time*1900,70+stage*10);
+ drawSky(r.altitude/1000,r.time*2660,98+stage*14);
  drawLayerScenery(layer,r.cameraAltitude/28,now);
- const shake=reducedMotion?0:r.slow>0?Math.sin(now*.08)*4:0;
+ const impactAge=r.time-(r.lastImpact?.time??-10);
+ const impactStrength=({light:2,serious:6,heavy:11})[r.lastImpact?.tier]??0;
+ const shake=reducedMotion?0:Math.sin(now*.09)*impactStrength*Math.max(0,1-impactAge/.55);
+ if(r.time<launch.stageUntil){ctx.fillStyle=`rgba(191,245,225,${.12*(launch.stageUntil-r.time)})`;ctx.fillRect(0,0,canvasWidth,canvasHeight);}
  for(const o of r.objects){
-  if(!o.active)continue;
+  if(!o.active||o.type==='route')continue;
   const node=objectNodes.get(o.id)??makeObjectNode(o),y=view.worldY(o.altitude);
-  node.hidden=o.done||y<110||y>canvasHeight;
-  if(!node.hidden){node.style.left=`${objectX(o,r)*100}%`;node.style.transform=`translate(-50%,calc(${y}px - 50%))`;}
+  node.hidden=o.done||y<95||y>canvasHeight;
+  if(!node.hidden){
+   node.style.left=`${objectX(o,r)*100}%`;node.style.transform=`translate(-50%,calc(${y}px - 50%))`;
+   if(o.type==='hazard'){node.style.height=`${view.flow*.24}px`;node.dataset.active=hazardActive(o,r);}
+  }
  }
  const rocketX=r.x*canvasWidth;
  ctx.save();ctx.translate(shake,0);
@@ -634,7 +651,9 @@ function drawLaunch(now,dt) {
  }
  ctx.restore();
  for(const event of r.events.splice(0)){
-  burst(event.x*canvasWidth,view.worldY(event.altitude),20,event.type==="hazard"?"#ff9769":event.type==="fuel"?"#94f4de":"#ffda77",3);
+  const count=event.type==='hazard'?({light:10,serious:30,heavy:52})[event.tier]:14;
+  burst(event.x*canvasWidth,view.worldY(event.altitude),count,event.type==="hazard"?"#ff9769":event.type==="fuel"?"#94f4de":"#ffda77",event.tier==='heavy'?5:3);
+  if(event.type==='hazard')dom.hullHud.animate([{transform:`scale(${event.tier==='heavy'?1.22:1.12})`,backgroundColor:'#ff7355'},{transform:'scale(1)',backgroundColor:'transparent'}],{duration:event.tier==='light'?250:550});
   if(event.type==="fuel"){
    dom.fuelGain.textContent=`+${event.gain.toFixed(1)} с`;dom.fuelGain.hidden=false;launch.fuelFeedbackUntil=now+1400;
    dom.fuelHud.getAnimations().forEach(a=>a.cancel());
@@ -645,7 +664,7 @@ function drawLaunch(now,dt) {
    const denominator=Math.max(r.stats.fuel,event.after);
    dom.fuelMeter.animate([{transform:`scaleX(${event.before/denominator})`},{transform:`scaleX(${event.after/denominator})`}],{duration:260});
   }
-  dom.eventTitle.textContent=event.type==="hazard"?(r.hull<=30?"ЕЩЁ ОДИН УДАР — И ВСЁ":"УДАР — ВЫРУЛИВАЙ"):"ПОДОБРАНО";
+  dom.eventTitle.textContent=event.type==="hazard"?(damageState(r)===3?"КРИТИЧЕСКИЙ КОРПУС":event.tier==='heavy'?"ТЯЖЁЛЫЙ УДАР":"УДАР — ВЫРУЛИВАЙ"):"ПОДОБРАНО";
   dom.eventMessage.textContent=event.text;dom.eventResult.textContent="";
   dom.eventToast.dataset.impact=event.type==="hazard"?"hit":"clear";
   dom.eventToast.hidden=false;launch.feedbackUntil=now+1250;
@@ -658,7 +677,8 @@ function drawLaunch(now,dt) {
  dom.recordBanner.hidden=r.time>launch.recordUntil||!launch.recordShown;
  setText(dom.flightCaption,`${r.vy.toFixed(0)} м/с · ${damage===3?'ПОСЛЕДНИЙ ШАНС · ':''}${r.fuel<10?"ИЩИ ТОПЛИВО":"ИЩИ ПРОХОД · РУЛИ ↔"}`);
  if(!r.paused&&!r.ended&&r.time>=launch.tutorialCooldown){
-  const candidate=tutorialCandidate(r,state.tutorials,launch.lastTutorialChunk);
+  const visibleRun={...r,objects:r.objects.filter(o=>objectNodes.has(o.id)&&!objectNodes.get(o.id).hidden)};
+  const candidate=tutorialCandidate(visibleRun,state.tutorials,launch.lastTutorialChunk);
   if(candidate&&objectNodes.get(candidate.id)&&!objectNodes.get(candidate.id).hidden)showTutorial(candidate);
  }
  if(r.paused&&launch.tutorialLayout!==`${canvasWidth}:${canvasHeight}`)positionTutorial();
