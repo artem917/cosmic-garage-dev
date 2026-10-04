@@ -5,7 +5,7 @@ import {
   sanitizeState,
   upgradeCost,
   statsFor,
-  createFlight, createCourse, seededRandom, stepFlight, flightResult, layerFor, nextMilestone, MILESTONES, clamp, progressFor, TUTORIAL_ORDER, TUTORIAL_COPY, completeTutorial, tutorialCandidate, cameraView, pointerControl, altitudeGauge, createControlTimeline, keyboardControl, objectX, damageState, hazardActive, DAMAGE_TIERS,
+  createFlight, createCourse, seededRandom, stepFlight, flightResult, layerFor, nextMilestone, MILESTONES, clamp, progressFor, TUTORIAL_ORDER, TUTORIAL_COPY, completeTutorial, tutorialCandidate, cameraView, pointerControl, altitudeGauge, createControlTimeline, keyboardControl, objectX, damageState, hazardActive, ROUTE_END, altitudeKm, formatAltitude, speedKmh, maxLevel, protectionText, collisionCopy, armCollisionTutorial, acceptCollisionTutorial, resumeCollisionTutorial, environmentFor, resultGoal, recordFlight,
 } from "./game-logic.js";
 import {bindUpgradeFeedback,tooltipPosition} from './upgrade-feedback.js';
 import {hazardSvg,HAZARD_NAMES} from './hazard-art.js';
@@ -19,12 +19,13 @@ const dom = Object.fromEntries(
     "flightBestValue", "flightProgressBar", "eventToast", "eventTitle", "eventMessage", "eventResult",
     "garagePanel", "upgradeList", "launchButton", "launchEstimate", "resultCard", "resultKicker",
     "resultTitle", "resultDistance", "resultBreakdown", "resultReward", "collectButton", "resetButton",
-    "locationLabel", "machineNote", "flightCaption", "upgradePop", "benchHint", "resultNext", "goalStatus", "routeMap", "fuelValue", "hullValue", "cargoValue", "objectLayer", "runClock", "goalDetail", "recordMarker", "recordBanner", "upgradeExplanation", "upgradeExplanationText", "upgradeExplanationTitle", "infoClose", "tutorialOverlay", "tutorialSpot", "tutorialBubble", "tutorialTitle", "tutorialText", "tutorialContinue", "tutorialSkip", "fuelHud", "fuelMeter", "fuelGain", "altitudeCapsule", "stageBanner", "hullHud",
+    "locationLabel", "machineNote", "flightCaption", "upgradePop", "benchHint", "resultNext", "goalStatus", "routeMap", "fuelValue", "hullValue", "cargoValue", "objectLayer", "runClock", "goalDetail", "recordMarker", "recordBanner", "upgradeExplanation", "upgradeExplanationText", "upgradeExplanationTitle", "infoClose", "tutorialOverlay", "tutorialSpot", "tutorialBubble", "tutorialTitle", "tutorialText", "tutorialContinue", "tutorialSkip", "fuelHud", "fuelMeter", "fuelGain", "altitudeCapsule", "stageBanner", "hullHud", "speedValue", "tutorialClose", "collisionSuppress",
   ].map((id) => [id, document.querySelector(`#${id}`)]),
 );
 
 window.dispatchEvent(new CustomEvent("cosmic-startup-stage", {detail:"ui"}));
 let state = loadState();
+const collisionSession={shown:false};
 window.dispatchEvent(new CustomEvent("cosmic-startup-stage", {detail:"save"}));
 let mode = "garage";
 let launch = null;
@@ -92,15 +93,19 @@ function walletFeedback(amount) {
 
 function nextEffect(key,level) {
  const before=statsFor({...state.upgrades,[key]:level}),after=statsFor({...state.upgrades,[key]:level+1});
- if(key==="engine")return `Тяга +${Math.round((after.climb/before.climb-1)*100)}% · ${after.climb.toFixed(1)} м/с`;
+ if(key==="engine")return `Подъём +${Math.round((after.climb/before.climb-1)*100)}% · на том же топливе`;
  if(key==="fuel")return `Топливо ${before.fuel.toFixed(1)} → ${after.fuel.toFixed(1)} с`;
- if(key==="hull")return `${before.hull} → ${after.hull} HP · потери ↓`;
+ if(key==="hull")return level ? "3 защитные секции · модуль установлен" : "2 → 3 секции · ещё одна жизнь";
  if(key==="guidance")return `Отклик +${Math.round((after.response/before.response-1)*100)}% · снос ↓`;
  return `Захват ${Math.round(before.magnet*100)} → ${Math.round(after.magnet*100)}% ширины`;
 }
 
 function loadState() {
- try {return sanitizeState(JSON.parse(localStorage.getItem(SAVE_KEY)??localStorage.getItem("cosmic-garage-proof-v1")));}
+ try {
+  const raw=JSON.parse(localStorage.getItem(SAVE_KEY)??localStorage.getItem("cosmic-garage-proof-v1")),migrated=sanitizeState(raw);
+  if(raw&&raw.saveVersion!==5){try{localStorage.setItem(SAVE_KEY,JSON.stringify(migrated));}catch{/* Keep loaded progress even when storage is read-only. */}}
+  return migrated;
+ }
  catch{return createInitialState();}
 }
 
@@ -113,7 +118,7 @@ function renderGarageUi(purchasedKey = null) {
   updateGoal();
   tallies.delete(dom.scrapValue);
   dom.scrapValue.textContent = state.scrap;
-  dom.bestValue.textContent = state.bestAltitude;
+  dom.bestValue.textContent = formatAltitude(state.bestAltitude);
   dom.launchCount.textContent = state.launches;
   dom.upgradeList.replaceChildren();
 
@@ -122,7 +127,7 @@ function renderGarageUi(purchasedKey = null) {
     const level = state.upgrades[key];
     const cost = upgradeCost(key, level);
     const card = document.createElement("article");
-    const affordable = level<12&&state.scrap >= cost;
+    const affordable = level<maxLevel(key)&&state.scrap >= cost;
     card.dataset.category = key;
     card.className = `upgrade-card${affordable ? " affordable" : ""}${key === purchasedKey ? " purchased" : ""}`;
     card.innerHTML = `
@@ -136,18 +141,18 @@ function renderGarageUi(purchasedKey = null) {
       <button class="buy-button" type="button" data-upgrade="${key}"
         aria-label="${config.name}: улучшить за ${cost} лома"
         ${!affordable ? "disabled" : ""}>
-        ${level>=12?'МАКС':'◆ '+cost}<small>${level>=12?'УР. 12':affordable ? "ПРИКРУТИТЬ" : "ЕЩЁ " + (cost - state.scrap)}</small>
+        ${level>=maxLevel(key)?'МАКС':'◆ '+cost}<small>${level>=maxLevel(key)?'УСТАНОВЛЕНО':affordable ? "ПРИКРУТИТЬ" : "ЕЩЁ " + (cost - state.scrap)}</small>
       </button>`;
     dom.upgradeList.append(card);
   }
 
   const stats = statsFor(state.upgrades);
   dom.launchEstimate.textContent = `Рули только ↔ · топливо ${stats.fuel.toFixed(1)} с`;
-  const available = UPGRADE_ORDER.filter((key) => state.upgrades[key]<12&&state.scrap >= upgradeCost(key, state.upgrades[key]));
+  const available = UPGRADE_ORDER.filter((key) => state.upgrades[key]<maxLevel(key)&&state.scrap >= upgradeCost(key, state.upgrades[key]));
   dom.benchHint.classList.toggle("ready", available.length > 0);
   dom.benchHint.textContent = available.length
     ? `Хватит на новую деталь! Доступно: ${available.length}`
-    : state.launches === 0 ? "Первый полёт — и хватит на новую деталь" : "Ещё один полёт — ещё немного лома";
+    : state.launches === 0 ? "Первый полёт — и хватит на новую деталь" : state.migrationRefund ? `Старый корпус: +${state.migrationRefund} лома за лишние уровни` : "Ещё один полёт — ещё немного лома";
 }
 
 function updateGoal(altitude=null) {
@@ -159,15 +164,15 @@ function updateGoal(altitude=null) {
  dom.goalStatus.dataset.progressKey=key;
  if(inFlight){
   const nearby=p.nearby;
-  setText(dom.goalStatus,nearby?`СЛЕДУЮЩИЙ РУБЕЖ: ${nearby.name.toUpperCase()} · ${nearby.altitude} м`:"ОРБИТА ДОСТИГНУТА");
-  setText(dom.goalDetail,"ЦЕЛЬ: ОРБИТА 1000 м · ВЫШЕ = ДАЛЬШЕ");
+  setText(dom.goalStatus,nearby?`СЛЕДУЮЩИЙ РУБЕЖ: ${nearby.name.toUpperCase()} · ${nearby.km} км`:"ОРБИТА ДОСТИГНУТА");
+  setText(dom.goalDetail,"ЦЕЛЬ: ОРБИТА 200 км · КОСМОС 100 км");
  }else{
-  dom.goalStatus.textContent=`РЕКОРД: ${p.record} м · РУБЕЖ: ${p.frontier.name.toUpperCase()}`;
+  dom.goalStatus.textContent=`РЕКОРД: ${formatAltitude(p.record)} км · ${p.frontier.name.toUpperCase()}`;
   dom.goalDetail.textContent=p.next
-   ?`${p.next.name.toUpperCase()}: ${p.record} / ${p.next.altitude} м · ещё ${p.remaining} м. ОРБИТА: ещё ${p.orbitRemaining} м`
-   :"ОРБИТА 1000 м ДОСТИГНУТА · ЛУНА — БУДУЩАЯ ЦЕЛЬ";
+   ?`${p.next.km} км: ещё ${(p.next.km-altitudeKm(p.record)).toFixed(1)} км · ОРБИТА: ещё ${(200-altitudeKm(p.record)).toFixed(1)} км`
+   :"ОРБИТА 200 км ДОСТИГНУТА · НОВЫЕ ЗАПУСКИ С ЗЕМЛИ";
  }
- if(!inFlight)dom.routeMap.innerHTML=p.route.map(m=>`<span class="${m.status}" ${m.status==="current"?'aria-current="step"':""}>${m.status==="completed"?"✓":m.status==="current"?"●":"○"} ${m.name}</span>`).join('<b>›</b>')+'<b>›</b><span class="future">Луна · позже</span>';
+ if(!inFlight)dom.routeMap.innerHTML=p.route.map(m=>`<span class="${m.status}" ${m.status==="current"?'aria-current="step"':""}>${m.status==="completed"?"✓":m.status==="current"?"●":"○"} ${m.km} км</span>`).join('<b>›</b>');
 }
 function setText(element,value){const text=String(value);if(element.textContent!==text)element.textContent=text;}
 function hideInfo(){
@@ -185,30 +190,36 @@ function positionInfo(key){
 }
 function positionTutorial(){
  if(!launch?.tutorial)return;
- const node=objectNodes.get(launch.tutorial.id);
- if(!node)return;
- const rect=node.getBoundingClientRect(),stage=canvas.getBoundingClientRect();
- const x=rect.left-stage.left+rect.width/2,y=rect.top-stage.top+rect.height/2;
+ const node=objectNodes.get(launch.tutorial.id),stage=canvas.getBoundingClientRect();
+ if(!node&&launch.tutorial.type!=='collision')return;
+ const rect=node?.getBoundingClientRect();
+ const x=rect?rect.left-stage.left+rect.width/2:launch.run.x*canvasWidth,y=rect?rect.top-stage.top+rect.height/2:canvasHeight*.60;
  dom.tutorialSpot.style.left=`${x-42}px`;dom.tutorialSpot.style.top=`${y-45}px`;
  dom.tutorialBubble.style.top=`${Math.max(100,Math.min(y+55,canvasHeight-dom.tutorialBubble.offsetHeight-14))}px`;
  launch.tutorialLayout=`${canvasWidth}:${canvasHeight}`;
 }
 function showTutorial(object){
- launch.tutorial=object;launch.run.paused=true;launch.accumulator=0;
+ launch.tutorial=object;launch.run.paused=true;launch.run.accumulator=0;
  shell.dataset.paused="true";keyboardDirection=0;heldKeys.clear();keyboardActive=false;
  if(pointerId!==null&&canvas.hasPointerCapture(pointerId))canvas.releasePointerCapture(pointerId);
  pointerId=null;
- dom.tutorialTitle.textContent=TUTORIAL_COPY[object.type].title;
- dom.tutorialText.textContent=TUTORIAL_COPY[object.type].text;
+ const collision=object.type==='collision';
+ dom.tutorialOverlay.dataset.collision=collision;
+ dom.tutorialClose.hidden=!collision;dom.collisionSuppress.hidden=!collision;
+ dom.tutorialContinue.hidden=collision;dom.tutorialSkip.hidden=collision;
+ dom.tutorialTitle.textContent=collision?"ЗАЩИТНАЯ СЕКЦИЯ ПОТЕРЯНА":TUTORIAL_COPY[object.type].title;
+ dom.tutorialText.textContent=collision?collisionCopy(launch.run):TUTORIAL_COPY[object.type].text;
  dom.tutorialOverlay.hidden=false;positionTutorial();
- dom.tutorialContinue.focus({preventScroll:true});
+ (collision?dom.tutorialClose:dom.tutorialContinue).focus({preventScroll:true});
 }
 function dismissTutorial(skip=false){
  if(!launch?.tutorial)return;
- completeTutorial(state,skip?"skip":launch.tutorial.type);saveState();
+ if(launch.tutorial.type==='collision')resumeCollisionTutorial(launch.run,state,skip);
+ else completeTutorial(state,skip?"skip":launch.tutorial.type);
+ saveState();
  launch.lastTutorialChunk=launch.tutorial.chunk??0;
  launch.tutorialCooldown=launch.run.time+1.5;
- launch.tutorial=null;launch.run.paused=false;launch.accumulator=0;
+ launch.tutorial=null;launch.run.paused=false;launch.run.accumulator=0;
  shell.dataset.paused="false";dom.tutorialOverlay.hidden=true;
  keyboardDirection=0;targetX=launch.run.x;launch.run.targetX=targetX;heldKeys.clear();lastFrame=performance.now();
  launch.controls.reset({x:targetX});
@@ -218,14 +229,14 @@ function makeObjectNode(o){
  const node=document.createElement("div");
  node.className="flight-object "+o.type;node.dataset.type=o.type;node.dataset.chunk=o.chunk??0;
  node.setAttribute("role","img");
- node.setAttribute("aria-label",o.type==='hazard'?`${HAZARD_NAMES[o.skin]} · −${DAMAGE_TIERS[o.tier]} HP`:({fuel:"Топливо +6 с",scrap:"Лом +3",salvage:"Ценный лом +8"})[o.type]);
- node.innerHTML=o.type==='hazard'?hazardSvg(o.skin):({fuel:'<i>▰</i><small>+6 с</small>',scrap:'<i>◆</i><small>+3</small>',salvage:'<i>▣</i><small>+8</small>'})[o.type];
- if(o.width){node.classList.add('thematic-hazard');node.dataset.skin=o.skin;node.dataset.tier=o.tier;node.style.width=`${o.width*100}%`;}
+ node.setAttribute("aria-label",o.type==='hazard'?`${HAZARD_NAMES[o.skin]} · опасность: −1 защитная секция`:({fuel:"Топливо +6 с",scrap:"Лом +1",salvage:"Ценный лом +4"})[o.type]);
+ node.innerHTML=o.type==='hazard'?hazardSvg(o.skin):({fuel:'<i>▰</i><small>+6 с</small>',scrap:'<i>◆</i><small>+1</small>',salvage:'<i>▣</i><small>+4</small>'})[o.type];
+ if(o.width){node.classList.add('thematic-hazard');node.dataset.skin=o.skin;node.dataset.impact=o.impact;node.style.width=`${o.width*100}%`;}
  node.hidden=true;dom.objectLayer.append(node);objectNodes.set(o.id,node);return node;
 }
 
 function buyUpgrade(key) {
-  if (mode !== "garage" || !UPGRADES[key] || state.upgrades[key]>=12) return;
+  if (mode !== "garage" || !UPGRADES[key] || state.upgrades[key]>=maxLevel(key)) return;
   hideInfo();
   const cost = upgradeCost(key, state.upgrades[key]);
   if (state.scrap < cost) return;
@@ -234,7 +245,7 @@ function buyUpgrade(key) {
   state.upgrades[key] += 1;
   saveState();
   installation = { key, start: performance.now() };
-  upgradeFeedback.purchase(key,state.upgrades[key],({engine:'Тяга выросла',fuel:'Топлива больше',hull:'Корпус крепче',guidance:'Отклик быстрее',magnet:'Захват шире'})[key]);
+  upgradeFeedback.purchase(key,state.upgrades[key],({engine:'Тяга выросла',fuel:'Топлива больше',hull:'Теперь 3 защитные секции',guidance:'Отклик быстрее',magnet:'Захват шире'})[key]);
   burst(canvasWidth * 0.5, canvasHeight * 0.55, 28, "#ffe39a", 3.5);
   renderGarageUi(key);
   tally(dom.scrapValue, before, state.scrap, 280);
@@ -251,14 +262,15 @@ function startLaunch(){
  launch={run:createFlight(state.upgrades,createCourse(rng,statsFor(state.upgrades))),plan:null,
   oldBest:state.bestAltitude,recordShown:false,recordUntil:0,start:performance.now(),resultStart:0,
   impactDone:false,quality:"mediocre",feedbackUntil:0,accumulator:0,tutorial:null,tutorialCooldown:0,lastTutorialChunk:-1,controls:createControlTimeline()};
+ armCollisionTutorial(launch.run,state,collisionSession);
  targetX=.5;keyboardDirection=0;keyboardActive=false;heldKeys.clear();objectNodes=new Map();dom.objectLayer.replaceChildren();
  setMode("launch");particles=[];shell.dataset.paused="false";
  dom.garagePanel.hidden=true;dom.garageStats.hidden=true;dom.flightHud.hidden=false;
  dom.resultCard.hidden=true;dom.eventToast.hidden=true;dom.objectLayer.hidden=false;
  dom.tutorialOverlay.hidden=true;dom.recordBanner.hidden=true;
  dom.recordMarker.hidden=launch.oldBest<=0;
- dom.recordMarker.style.bottom=`${launch.oldBest/10}%`;
- dom.recordMarker.setAttribute("aria-label",`Предыдущий рекорд ${launch.oldBest} м`);
+ dom.recordMarker.style.bottom=`${altitudeKm(launch.oldBest)/2}%`;
+ dom.recordMarker.setAttribute("aria-label",`Предыдущий рекорд ${formatAltitude(launch.oldBest)} км`);
  dom.launchButton.disabled=true;dom.machineNote.hidden=true;dom.upgradePop.hidden=true;
  dom.fuelGain.hidden=true;
  dom.stageBanner.hidden=true;launch.stage=0;launch.stageUntil=0;
@@ -271,7 +283,7 @@ function finishLaunch() {
  launch.plan=flightResult(launch.run,state.launches,state.claimedMilestones,state.orbitBonusClaimed);
  const p=launch.plan;
  launch.quality=p.reason==="orbit"?"exceptional":p.distance>launch.oldBest?"good":"mediocre";
- state.bestAltitude=Math.max(state.bestAltitude,p.distance);saveState();
+ recordFlight(state,p);saveState();
  setMode("result");launch.resultStart=performance.now();
  dom.locationLabel.textContent=layerFor(p.distance).name.toUpperCase()+" · РЕЗУЛЬТАТ";
  dom.flightHud.hidden=true;dom.objectLayer.hidden=true;dom.eventToast.hidden=true;
@@ -279,17 +291,14 @@ function finishLaunch() {
  dom.resultKicker.textContent=p.distance>launch.oldBest?"НОВЫЙ РЕКОРД!":"РЕЗУЛЬТАТ ПОЛЁТА";
  dom.resultCard.dataset.quality=launch.quality;
  dom.resultTitle.textContent=p.landingLabel;
- tally(dom.resultDistance,0,p.distance,300);tally(dom.resultReward,0,p.reward,300);
+ dom.resultDistance.textContent=formatAltitude(p.distance);tally(dom.resultReward,0,p.reward,300);
  dom.resultBreakdown.innerHTML=`
- <div class="result-line"><span>Рекорд · время</span><strong>${state.bestAltitude} м · ${p.duration.toFixed(1)} с</strong></div>
+ <div class="result-line"><span>Рекорд · время</span><strong>${formatAltitude(state.bestAltitude)} км · ${p.duration.toFixed(1)} с</strong></div>
  <div class="result-line"><span>Полёт / груз</span><strong>${p.base} / ${p.cargo} лома</strong></div>
  <div class="result-line"><span>Новые рубежи / первая Орбита</span><strong>${p.milestoneBonus} / ${p.orbitBonus} лома</strong></div>
  <div class="result-line"><span>Ценный лом · канистры · удары</span><strong>${p.salvage} · ${p.fuelPickups} · ${p.hits}</strong></div>
  ${p.firstFlightBonus?'<div class="result-line"><span>На первую деталь</span><strong>+'+p.firstFlightBonus+' лома</strong></div>':""}`;
- dom.resultNext.textContent=p.next
-  ? p.next.altitude===1000 ? `ОРБИТА — ещё ${1000-p.distance} м`
-    : `${p.next.name.toUpperCase()} — ещё ${p.next.altitude-p.distance} м. ОРБИТА — ещё ${1000-p.distance} м`
-  : "Орбита взята! Луна — будущая цель, пока без геймплея";
+ dom.resultNext.textContent=resultGoal(p.distance);
  dom.resultCard.hidden=false;dom.flightCaption.hidden=true;
  updateGoal(p.distance);dom.collectButton.focus({preventScroll:true});
 }
@@ -360,7 +369,7 @@ function resetGame() {
   resetArmedUntil = 0;
   dom.resetButton.textContent = "DEV RESET";
   dom.resetButton.removeAttribute("aria-label");
-  state = createInitialState();
+  state = createInitialState();collisionSession.shown=false;
   hideInfo();dom.tutorialOverlay.hidden=true;dom.recordBanner.hidden=true;dom.stageBanner.hidden=true;shell.dataset.paused="false";
   dom.objectLayer.hidden=true;
   targetX=.5;keyboardDirection=0;
@@ -595,6 +604,7 @@ function drawLaunch(now,dt) {
  const r=launch.run;
  if(document.hidden)return;
  const activeDt=r.paused?0:dt;
+ const cosmeticDt=Math.min(dt,.05);
  stepFlight(r,activeDt,run=>launch.controls.sample(run.time));
  if(keyboardActive)targetX=r.targetX;
  const layer=layerFor(r.altitude);
@@ -603,29 +613,31 @@ function drawLaunch(now,dt) {
  if(stage>launch.stage){
   launch.stage=stage;launch.stageUntil=r.time+1;
   const first=layer.altitude>launch.oldBest;
-  dom.stageBanner.innerHTML=`<strong>${layer.name.toUpperCase()}</strong><small>${first?'НОВЫЙ РУБЕЖ ОТКРЫТ':'ЭТАП '+(stage+1)}</small>`;
+  dom.stageBanner.innerHTML=`<strong>${layer.km===100?'100 КМ · КОСМОС':layer.name.toUpperCase()}</strong><small>${layer.km===100?'ЛИНИЯ КАРМАНА ПРОЙДЕНА':layer.km+' КМ · '+(first?'НОВЫЙ РУБЕЖ':'ЭТАП '+(stage+1))}</small>`;
   dom.stageBanner.dataset.first=first;
   burst(canvasWidth*.5,canvasHeight*.23,first?35:18,'#b7f6e1',2.2);
  }
  dom.stageBanner.hidden=r.time>=launch.stageUntil;
  const damage=damageState(r);dom.hullHud.dataset.damage=damage;
- setText(dom.distanceValue,Math.floor(r.altitude));
- setText(dom.flightBestValue,Math.max(launch.oldBest,Math.floor(r.peakAltitude)));
+ setText(dom.distanceValue,formatAltitude(r.altitude));
+ setText(dom.speedValue,speedKmh(r).toLocaleString("ru-RU"));
+ setText(dom.flightBestValue,formatAltitude(Math.max(launch.oldBest,r.peakAltitude)));
  setText(dom.fuelValue,r.fuel.toFixed(1));
- setText(dom.hullValue,Math.ceil(r.hull));
+ setText(dom.hullValue,protectionText(r));
+ dom.hullHud.setAttribute("aria-label",`Осталось ${r.sections} из ${r.stats.sections} защитных секций`);
  setText(dom.cargoValue,r.cargo);
  setText(dom.runClock,r.time.toFixed(1));
  dom.flightProgressBar.style.transform=`scaleY(${altitudeGauge(r.altitude,launch.oldBest).fill})`;
- dom.altitudeCapsule.setAttribute("aria-valuenow",String(Math.floor(r.altitude)));
+ dom.altitudeCapsule.setAttribute("aria-valuenow",altitudeKm(r.altitude).toFixed(1));
  dom.fuelMeter.style.transform=`scaleX(${r.fuel/Math.max(r.stats.fuel,r.fuel)})`;
  dom.fuelValue.parentElement.classList.toggle("low",r.fuel<5);
  updateGoal(r.altitude);
  const view=cameraView(r,canvasHeight),rocketY=view.rocketY,scale=view.scale;
  // Render only the activated immediate chunk; future chunks stay data-only.
- drawSky(r.altitude/1000,r.time*2660,98+stage*14);
- drawLayerScenery(layer,r.cameraAltitude/28,now);
- const impactAge=r.time-(r.lastImpact?.time??-10);
- const impactStrength=({light:2,serious:6,heavy:11})[r.lastImpact?.tier]??0;
+ drawSky(r.altitude/ROUTE_END,r.time*2660,98+Math.min(4,stage)*14);
+ drawLayerScenery(environmentFor(r.altitude),r.cameraAltitude/28,now);
+ const impactAge=(now-(launch.impactWall??-10000))/1000;
+ const impactStrength=({light:2,serious:6,heavy:11})[r.lastImpact?.impact]??0;
  const shake=reducedMotion?0:Math.sin(now*.09)*impactStrength*Math.max(0,1-impactAge/.55);
  if(r.time<launch.stageUntil){ctx.fillStyle=`rgba(191,245,225,${.12*(launch.stageUntil-r.time)})`;ctx.fillRect(0,0,canvasWidth,canvasHeight);}
  for(const o of r.objects){
@@ -647,13 +659,14 @@ function drawLaunch(now,dt) {
  if(damage){
   ctx.fillStyle="#313832aa";ctx.beginPath();ctx.ellipse(rocketX-8,rocketY,12,7,.3,0,Math.PI*2);ctx.fill();
   ctx.strokeStyle='#613e33';ctx.lineWidth=damage+1;ctx.beginPath();ctx.moveTo(rocketX-9,rocketY-15);ctx.lineTo(rocketX+7,rocketY-2);ctx.lineTo(rocketX-6,rocketY+10);ctx.stroke();
-  if(Math.random()<activeDt*[0,4,22,40][damage]){particles.push({x:rocketX,y:rocketY+36,vx:Math.random()-.5,vy:2,life:.65,maxLife:.65,size:4+damage*2,color:damage===3?'#392d2e':'#424b48'});}
+  if(Math.random()<cosmeticDt*[0,4,22,40][damage]){particles.push({x:rocketX,y:rocketY+36,vx:Math.random()-.5,vy:2,life:.65,maxLife:.65,size:4+damage*2,color:damage===3?'#392d2e':'#424b48'});}
  }
  ctx.restore();
  for(const event of r.events.splice(0)){
-  const count=event.type==='hazard'?({light:10,serious:30,heavy:52})[event.tier]:14;
-  burst(event.x*canvasWidth,view.worldY(event.altitude),count,event.type==="hazard"?"#ff9769":event.type==="fuel"?"#94f4de":"#ffda77",event.tier==='heavy'?5:3);
-  if(event.type==='hazard')dom.hullHud.animate([{transform:`scale(${event.tier==='heavy'?1.22:1.12})`,backgroundColor:'#ff7355'},{transform:'scale(1)',backgroundColor:'transparent'}],{duration:event.tier==='light'?250:550});
+  if(event.type==='hazard')launch.impactWall=now;
+  const count=event.type==='hazard'?({light:10,serious:30,heavy:52})[event.impact]:14;
+  burst(event.x*canvasWidth,view.worldY(event.altitude),count,event.type==="hazard"?"#ff9769":event.type==="fuel"?"#94f4de":"#ffda77",event.impact==='heavy'?5:3);
+  if(event.type==='hazard')dom.hullHud.animate([{transform:`scale(${event.impact==='heavy'?1.22:1.12})`,backgroundColor:'#ff7355'},{transform:'scale(1)',backgroundColor:'transparent'}],{duration:event.impact==='light'?250:550});
   if(event.type==="fuel"){
    dom.fuelGain.textContent=`+${event.gain.toFixed(1)} с`;dom.fuelGain.hidden=false;launch.fuelFeedbackUntil=now+1400;
    dom.fuelHud.getAnimations().forEach(a=>a.cancel());
@@ -664,7 +677,7 @@ function drawLaunch(now,dt) {
    const denominator=Math.max(r.stats.fuel,event.after);
    dom.fuelMeter.animate([{transform:`scaleX(${event.before/denominator})`},{transform:`scaleX(${event.after/denominator})`}],{duration:260});
   }
-  dom.eventTitle.textContent=event.type==="hazard"?(damageState(r)===3?"КРИТИЧЕСКИЙ КОРПУС":event.tier==='heavy'?"ТЯЖЁЛЫЙ УДАР":"УДАР — ВЫРУЛИВАЙ"):"ПОДОБРАНО";
+  dom.eventTitle.textContent=event.type==="hazard"?(damageState(r)===3?"ПОСЛЕДНЯЯ СЕКЦИЯ":event.impact==='heavy'?"ТЯЖЁЛЫЙ УДАР":"УДАР — ВЫРУЛИВАЙ"):"ПОДОБРАНО";
   dom.eventMessage.textContent=event.text;dom.eventResult.textContent="";
   dom.eventToast.dataset.impact=event.type==="hazard"?"hit":"clear";
   dom.eventToast.hidden=false;launch.feedbackUntil=now+1250;
@@ -675,14 +688,15 @@ function drawLaunch(now,dt) {
   launch.recordShown=true;launch.recordUntil=r.time+2;dom.recordBanner.textContent="НОВЫЙ РЕКОРД!";
  }
  dom.recordBanner.hidden=r.time>launch.recordUntil||!launch.recordShown;
- setText(dom.flightCaption,`${r.vy.toFixed(0)} м/с · ${damage===3?'ПОСЛЕДНИЙ ШАНС · ':''}${r.fuel<10?"ИЩИ ТОПЛИВО":"ИЩИ ПРОХОД · РУЛИ ↔"}`);
+ setText(dom.flightCaption,`${damage===3?'ПОСЛЕДНИЙ ШАНС · ':''}${r.fuel<10?"ИЩИ ТОПЛИВО":"ИЩИ ПРОХОД · РУЛИ ↔"}`);
+ if(acceptCollisionTutorial(r,collisionSession))showTutorial({type:"collision",chunk:-1});
  if(!r.paused&&!r.ended&&r.time>=launch.tutorialCooldown){
   const visibleRun={...r,objects:r.objects.filter(o=>objectNodes.has(o.id)&&!objectNodes.get(o.id).hidden)};
   const candidate=tutorialCandidate(visibleRun,state.tutorials,launch.lastTutorialChunk);
   if(candidate&&objectNodes.get(candidate.id)&&!objectNodes.get(candidate.id).hidden)showTutorial(candidate);
  }
  if(r.paused&&launch.tutorialLayout!==`${canvasWidth}:${canvasHeight}`)positionTutorial();
- updateParticles(activeDt);drawParticles();
+ updateParticles(r.paused?cosmeticDt:activeDt);drawParticles();
  if(r.ended)finishLaunch();
 }
 
@@ -732,17 +746,17 @@ function drawSpeedField(altitude, elapsed, speed) {
 function drawLayerScenery(layer,time,now) {
  const w=canvasWidth,h=canvasHeight;
  ctx.save();
- if(layer.altitude<360){
-  ctx.fillStyle=layer.altitude===0?"#3b615277":"#274c6277";
+ if(layer==="city"){
+  ctx.fillStyle="#3b615277";
   for(let i=0;i<7;i++){
    const y=(i*137+time*19)%(h+220)-110;
    ctx.fillRect(i%2?w-26:0,y,26,90+i%3*23);
    ctx.fillStyle="#ffe09a44";ctx.fillRect(i%2?w-19:7,y+13,6,8);ctx.fillStyle="#274c6277";
   }
- }else if(layer.altitude===360){
+ }else if(layer==="cloud"){
   ctx.fillStyle="#f2f3e324";
   for(let i=0;i<5;i++){ctx.beginPath();ctx.ellipse(i%2?w:0,(i*190+time*30)%(h+140)-70,95,30,0,0,Math.PI*2);ctx.fill();}
- }else if(layer.altitude===560){
+ }else if(layer==="storm"){
   ctx.fillStyle="#293b5977";ctx.fillRect(0,0,w,h);
   ctx.strokeStyle="#a7ced84d";ctx.lineWidth=1;
   for(let i=0;i<25;i++){const x=(i*67+Math.sin(time)*20)%w,y=(i*51+time*130)%h;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x-9,y+22);ctx.stroke();}
@@ -921,6 +935,9 @@ function drawRocket(x, y, scale, rotation, thrust, levels, now) {
       ctx.beginPath(); ctx.moveTo(-26, 5 + i * 13); ctx.lineTo(26, 5 + i * 13); ctx.stroke();
     }
   }
+  // Armour strips disappear on the ship as well as in the HUD.
+  const armourCount=mode==="launch"?launch.run.sections:2+Number(levels.hull>0);
+  for(let i=0;i<armourCount;i++){plate(-29,5+i*12,58,7,i===2?"#96d7c4":"#e2bf74",2);}
   if (levels.guidance > 0) {
     ctx.strokeStyle = "#d2c69b"; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(19, top + 29); ctx.lineTo(38, top + 4); ctx.stroke();
@@ -974,10 +991,12 @@ dom.upgradeList.addEventListener("click", (event) => {
 });
 
 // Info interactions are bound separately by upgrade-feedback.js.
+dom.tutorialClose.addEventListener("click",()=>dismissTutorial());
+dom.collisionSuppress.addEventListener("click",()=>dismissTutorial(true));
 dom.tutorialContinue.addEventListener("click",()=>dismissTutorial());
 dom.tutorialSkip.addEventListener("click",event=>{event.stopPropagation();dismissTutorial(true);});
 dom.tutorialOverlay.addEventListener("click",event=>{
- if(event.target===dom.tutorialOverlay||event.target===dom.tutorialSpot)dismissTutorial();
+ if(launch?.tutorial?.type!=='collision'&&(event.target===dom.tutorialOverlay||event.target===dom.tutorialSpot))dismissTutorial();
 });
 
 dom.launchButton.addEventListener("click", startLaunch);
@@ -1010,7 +1029,8 @@ window.addEventListener("keydown",event=>{
  if(launch?.run.paused){
   if(event.key==="Escape"){event.preventDefault();dismissTutorial();}
   if(event.key==="Tab"){
-   event.preventDefault();(document.activeElement===dom.tutorialContinue?dom.tutorialSkip:dom.tutorialContinue).focus();
+   event.preventDefault();const buttons=launch.tutorial?.type==='collision'?[dom.tutorialClose,dom.collisionSuppress]:[dom.tutorialContinue,dom.tutorialSkip];
+   (document.activeElement===buttons[0]?buttons[1]:buttons[0]).focus();
   }
   return;
  }

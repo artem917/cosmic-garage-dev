@@ -440,6 +440,18 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
 .stage-banner small { display:block; font-size:.58rem; margin-top:3px; color:#bbffe0; }
 .stage-banner[data-first="true"] { border-bottom:3px solid #e9dfa1; }
 #hullHud[data-damage="3"]::after { content:'КРИТ!'; display:inline; padding-left:3px; font-size:.55rem; }
+#hullHud[data-damage="3"]::after { content:none; }
+#hullValue { font-size:1rem; letter-spacing:2px; white-space:nowrap; }
+.speed-reading { position:absolute; top:35px; left:0; right:0; text-align:center; font-size:.56rem; color:#d6f2e4; }
+.resource-hud { top:53px; }
+.hud-reading { padding:3px 7px; }
+.hud-reading strong { font-size:1rem; }
+.tutorial-overlay[data-collision="true"] .tutorial-bubble { padding-top:38px; }
+.tutorial-bubble .tutorial-close { position:absolute; top:4px; right:4px; width:44px; height:44px; min-height:44px; font-size:1.6rem; border:0; background:transparent; }
+.tutorial-overlay[data-collision="true"] .tutorial-bubble h2 { padding-right:0; font-size:.82rem; }
+.tutorial-overlay[data-collision="true"] .tutorial-spot { box-shadow:0 0 0 2000px #08162488,0 0 18px #ffe7a7; }
+.thematic-hazard { border-color:#ffad7a !important; }
+.thematic-hazard::after { content:'!'; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); font-size:20px; font-weight:900; color:#fff4d9; text-shadow:0 2px 3px #612d24; pointer-events:none; }
 /* Opt-in QA only; absent from the normal player URL and never intercepts input. */
 .dev-thumb { display:none; }
 .game-shell[data-mode="launch"][data-thumb-test="true"] .dev-thumb { display:block; pointer-events:none; position:absolute; z-index:7; top:77%; left:50%; width:72px; height:100px; transform:translateX(-50%); border:2px dashed #ffe5b5; border-radius:50% 50% 35% 35%; background:#dfac7bb3; }

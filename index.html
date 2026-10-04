@@ -40,7 +40,7 @@
         </div>
       </header>
       <section class="goal-panel" aria-label="Цель и маршрут">
-        <strong id="goalStatus">РЕКОРД: 0 м · РУБЕЖ: СВАЛКА</strong>
+        <strong id="goalStatus">РЕКОРД: 0.0 км · ТРОПОСФЕРА</strong>
         <div id="goalDetail" class="goal-detail"></div>
         <div id="routeMap" class="route-map"></div>
       </section>
@@ -50,25 +50,26 @@
         <div id="objectLayer" class="object-layer" hidden></div>
         <div class="dev-thumb" aria-hidden="true"></div>
         <div class="garage-stats" id="garageStats">
-          <div><small>ЛУЧШИЙ ПОЛЁТ</small><strong><span id="bestValue">0</span> м</strong></div>
+          <div><small>ЛУЧШИЙ ПОЛЁТ</small><strong><span id="bestValue">0</span> км</strong></div>
           <div><small>ЗАПУСКОВ</small><strong id="launchCount">0</strong></div>
         </div>
         <div class="flight-hud" id="flightHud" hidden>
-          <div class="hud-reading"><small>ВЫСОТА</small><strong><span id="distanceValue">0</span> м</strong></div>
-          <div class="hud-reading right"><small>ЛИЧНЫЙ РЕКОРД</small><strong><span id="flightBestValue">0</span> м</strong></div>
+          <div class="hud-reading"><small>ВЫСОТА</small><strong><span id="distanceValue">0</span> км</strong></div>
+          <div class="hud-reading right"><small>ЛИЧНЫЙ РЕКОРД</small><strong><span id="flightBestValue">0</span> км</strong></div>
+          <div class="speed-reading">СКОРОСТЬ <b id="speedValue">0</b> км/ч</div>
           <div class="resource-hud">
-            <span id="fuelHud" class="fuel-hud">▰ <b id="fuelValue">28</b> с<i class="fuel-track"><i id="fuelMeter"></i></i><strong id="fuelGain" hidden>+6 с</strong></span>
-            <span id="hullHud">КОРПУС <b id="hullValue">100</b></span>
+            <span id="fuelHud" class="fuel-hud">▰ <b id="fuelValue">36</b> с<i class="fuel-track"><i id="fuelMeter"></i></i><strong id="fuelGain" hidden>+6 с</strong></span>
+            <span id="hullHud">ЗАЩИТА <b id="hullValue">◆◆</b></span>
             <span>◆ <b id="cargoValue">0</b></span>
             <span><b id="runClock">0</b> с</span>
           </div>
         </div>
-        <div id="altitudeCapsule" class="altitude-thermometer" role="progressbar" aria-label="Высота от Свалки до Орбиты" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="0">
-          <small class="thermometer-top">1000<br>Орбита</small>
+        <div id="altitudeCapsule" class="altitude-thermometer" role="progressbar" aria-label="Высота от Земли до Орбиты" aria-valuemin="0" aria-valuemax="200" aria-valuenow="0">
+          <small class="thermometer-top">200 км<br>Орбита</small>
           <div class="flight-progress"><span id="flightProgressBar"></span><i id="recordMarker" role="img" aria-label="Предыдущий рекорд" hidden></i>
-            <b style="bottom:18%" title="Город 180 м"></b><b style="bottom:36%" title="Облака 360 м"></b><b style="bottom:56%" title="Шторм 560 м"></b><b style="bottom:78%" title="Стратосфера 780 м"></b><b style="bottom:100%" title="Орбита 1000 м"></b>
+            <b style="bottom:6%" title="12 км · Стратосфера"></b><b style="bottom:25%" title="50 км · Мезосфера"></b><b style="bottom:42.5%" title="85 км · Верхняя атмосфера"></b><b style="bottom:50%" title="100 км · Космос"></b><b style="bottom:100%" title="200 км · Орбита"></b>
           </div>
-          <small class="thermometer-bottom">0<br>Свалка</small>
+          <small class="thermometer-bottom">0<br>Земля</small>
         </div>
         <div class="event-toast" id="eventToast" aria-live="assertive" hidden>
           <span class="event-signal">!</span>
@@ -82,9 +83,11 @@
         <div id="tutorialOverlay" class="tutorial-overlay" hidden>
           <div id="tutorialSpot" class="tutorial-spot"></div>
           <section id="tutorialBubble" class="tutorial-bubble" role="dialog" aria-modal="true" aria-labelledby="tutorialTitle" aria-describedby="tutorialText">
+            <button id="tutorialClose" class="tutorial-close" type="button" aria-label="Закрыть подсказку столкновения" hidden>×</button>
             <small>ОБУЧЕНИЕ · ПОЛЁТ НА ПАУЗЕ</small>
             <h2 id="tutorialTitle"></h2>
             <p id="tutorialText"></p>
+            <button id="collisionSuppress" class="tutorial-skip" type="button" hidden>Больше не показывать</button>
             <button id="tutorialContinue" type="button">ПОНЯТНО · ЛЕТИМ</button>
             <button id="tutorialSkip" class="tutorial-skip" type="button">Пропустить обучение</button>
           </section>
@@ -100,7 +103,7 @@
         <p class="bench-hint" id="benchHint" aria-live="polite">Первый полёт — и хватит на новую деталь</p>
         <button class="launch-button" id="launchButton" type="button">
           <span class="launch-button-icon" aria-hidden="true">▲</span>
-          <span><strong>ЗАПУСТИТЬ</strong><small id="launchEstimate">Ожидаемая дальность ~132 м</small></span>
+          <span><strong>ЗАПУСТИТЬ</strong><small id="launchEstimate">К Земле не привязаны — рули ↔</small></span>
         </button>
       </section>
 
@@ -112,7 +115,7 @@
       <section class="result-card" id="resultCard" role="dialog" aria-modal="true" aria-labelledby="resultTitle" hidden>
         <p class="eyebrow" id="resultKicker">РЕЗУЛЬТАТ ЗАПУСКА</p>
         <h2 id="resultTitle">Эффектный кратер</h2>
-        <div class="distance-result"><strong id="resultDistance">0</strong><span>М · ПИК ВЫСОТЫ</span></div>
+        <div class="distance-result"><strong id="resultDistance">0</strong><span>КМ · ПИК ВЫСОТЫ</span></div>
         <div class="result-breakdown" id="resultBreakdown"></div>
         <div class="reward-box">
           <span class="scrap-icon large" aria-hidden="true">◆</span>
