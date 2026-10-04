@@ -472,3 +472,69 @@ button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
  .flight-object[data-lower-text="true"] small { visibility:hidden; }
  .tutorial-bubble { top:auto !important; bottom:calc(40% + 55px); max-height:calc(60% - 67px); overflow-y:auto; overscroll-behavior:contain; }
 }
+
+/* Orbit is a separate workshop. These modes never override Earth flight geometry. */
+.garage-nav { display:flex; align-items:center; gap:4px; }
+.dock-entry { min-height:44px; padding:5px 9px; border:2px solid #a0d9bc; border-radius:6px; background:#234f52; color:#d2ffe3; font-size:.65rem; white-space:nowrap; }
+.result-actions { display:grid; grid-template-columns:1fr; gap:6px; }
+.result-actions:has(#resultDockButton:not([hidden])) { grid-template-columns:1fr 1fr; }
+.result-actions:has(#resultDockButton:not([hidden])) button { font-size:.74rem; }
+.orbit-unlock { position:absolute; top:8px; left:8%; right:8%; z-index:21; padding:10px; border:2px solid #c0f6d9; border-radius:9px; background:#123d49ed; text-align:center; color:#e2ffe6; pointer-events:none; box-shadow:0 0 35px #a0ffe580; animation:orbit-reveal 1.2s both; }
+.orbit-unlock span { display:block; font-size:1.7rem; color:#ffdf88; }
+.orbit-unlock strong { display:block; font-size:.95rem; }
+.orbit-unlock small { display:block; margin-top:5px; font-size:.52rem; }
+@keyframes orbit-reveal { 0% { opacity:0; transform:scale(.9); } 30% { opacity:1; transform:scale(1.04); } 100% { opacity:1; transform:scale(1); } }
+.game-shell:is([data-mode="dock"],[data-mode="puzzle"]) .goal-panel,
+.game-shell:is([data-mode="dock"],[data-mode="puzzle"]) .flight-stage { display:none; }
+.game-shell:is([data-mode="dock"],[data-mode="puzzle"]) { background:radial-gradient(ellipse at 85% 25%,#315968,#122a37 70%); }
+.game-shell:is([data-mode="dock"],[data-mode="puzzle"]) .topbar { height:54px; }
+.dock-screen,.puzzle-screen { padding:12px 14px calc(12px + env(safe-area-inset-bottom)); }
+.dock-screen h1 { margin:4px 0; font-size:1.3rem; color:#ffe1a4; }
+.dock-intro { margin:5px 0 8px; font-size:.72rem; line-height:1.4; color:#c5dacb; }
+.dock-art { height:130px; position:relative; overflow:hidden; margin:8px -3px 12px; border:2px solid #739e97; border-radius:12px; background:radial-gradient(circle at 72% 14%,#dfe5b8 0 1px,transparent 2px),#0c2639; }
+.dock-earth { position:absolute; width:150%; height:210px; left:-25%; top:80px; border-radius:50%; background:radial-gradient(ellipse at 35% 15%,#d1e6ce 0 5%,transparent 6%),radial-gradient(ellipse at 65% 25%,#9fc298 0 12%,transparent 13%),linear-gradient(#65d3d4,#326d91 50%); border-top:6px solid #b1eff0; box-shadow:0 -7px 25px #82efdc60; }
+.dock-stars { position:absolute; top:10px; left:20px; width:2px; height:2px; background:#e2eac9; box-shadow:40px 17px #e2eac9,70px -3px #e2eac9,150px 8px #e2eac9,275px 23px #e2eac9; }
+.dock-platform { position:absolute; left:7%; right:7%; top:81px; height:13px; background:repeating-linear-gradient(90deg,#6d8d82 0 17px,#203e4a 18px 23px); border:3px solid #c5bb87; transform:rotate(-4deg); }
+.dock-station { position:absolute; top:30px; left:14%; width:93px; height:57px; border:4px solid #173c43; border-radius:15px 5px 6px 4px; background:linear-gradient(90deg,#a5bca4,#e0d3ac,#90aa99); transform:rotate(-4deg); box-shadow:0 5px #071d29; }
+.dock-station span { position:absolute; bottom:4px; left:9px; font-size:.68rem; color:#38584d; }
+.dock-station i { position:absolute; top:8px; right:10px; width:26px; height:22px; border:4px solid #587c71; border-radius:50%; background:#8ce0d6; }
+.dock-satellite { position:absolute; right:9%; top:42px; display:flex; align-items:center; transform:rotate(12deg); }
+.dock-satellite b { width:31px; height:39px; background:#dac190; border:3px solid #527a74; box-shadow:inset 0 8px #9ea17c; }
+.dock-satellite i { width:35px; height:26px; background:repeating-linear-gradient(0deg,#416f90 0 7px,#8ca3a0 8px 9px); border:2px solid #a6bda2; }
+.dock-cable { position:absolute; top:51px; left:30%; width:45%; height:41px; border:3px solid #9aad8b; border-top:0; border-radius:0 0 50% 50%; transform:rotate(-6deg); }
+.dock-recipe,.dock-job,.moon-teaser { padding:10px; margin:9px 0; border:2px solid #688b7e; border-radius:9px; background:#143438e8; }
+.dock-recipe h2,.dock-job h2 { margin:0 0 7px; font-size:.81rem; color:#f3db99; }
+.recipe-part { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:5px 0; border-top:1px solid #79978844; font-size:.59rem; color:#c4d6c3; }
+.recipe-part strong { flex:none; font-size:.95rem; color:#ffd791; }
+.recipe-part.ready { color:#b6f3cd; }.recipe-part.ready strong { color:#b6f3cd; }
+.dock-recipe p,.dock-job p,.moon-teaser p { margin:7px 0; font-size:.68rem; line-height:1.4; color:#c7dcc9; }
+.dock-job > strong { display:block; margin-bottom:8px; font-size:.62rem; color:#8ef2d5; }
+.dock-primary,.dock-secondary { display:block; width:100%; min-height:44px; padding:7px; border:2px solid #8fb48d; border-radius:7px; background:linear-gradient(#d9edac,#aecb89); color:#214943; font-size:.73rem; font-weight:900; }
+.dock-secondary { margin-top:10px; background:#1c4249; border-color:#659995; color:#c4edd5; }
+.dock-primary:active,.circuit-tile:active { transform:scale(.97); }
+.dock-screen[data-built="true"] .dock-recipe { border-color:#c0f6c9; box-shadow:0 0 22px #8afaaf30; }
+.moon-teaser { border-color:#d4c68d; background:radial-gradient(ellipse at 100% 0%,#59758b,#1c354b); }
+.moon-teaser small { font-size:.56rem; color:#bcdacb; }.moon-teaser h2 { margin:6px 0 3px; font-size:1.35rem; color:#fff0c6; }.moon-teaser > strong { font-size:1.12rem; color:#ffdc8f; }
+.puzzle-heading { margin-bottom:8px; }
+.puzzle-heading small { font-size:.55rem; color:#b0cdc4; }.puzzle-heading h1 { margin:3px 0; font-size:1rem; color:#ffe0a1; line-height:1.2; }
+.drone-energy { position:relative; display:flex; justify-content:space-between; align-items:center; min-height:32px; margin-bottom:8px; padding:6px 8px 10px; border:1px solid #85ac99; border-radius:5px; background:#0d3039; font-size:.64rem; }
+.drone-energy strong { color:#c7f29a; font-size:.98rem; }.drone-energy > i { position:absolute; left:8px; right:8px; height:3px; bottom:3px; background:#223f45; border-radius:3px; overflow:hidden; }.drone-energy b { display:block; height:100%; background:#b8efa5; transform-origin:0 50%; transition:transform .14s; }
+.puzzle-status { min-height:72px; margin-bottom:8px; color:#d8eccc; }
+.puzzle-status > strong { display:block; font-size:.74rem; color:#ffe1a1; line-height:1.2; }
+.puzzle-status p { margin:4px 0; font-size:.66rem; line-height:1.35; }.puzzle-status button { margin-top:5px; min-height:40px; }
+.puzzle-screen[data-phase="failed"] .puzzle-status strong { color:#ffb99d; }
+.puzzle-screen[data-phase="reward"] .puzzle-status strong { color:#bfffdd; }
+.circuit-board { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; padding:8px; border:3px solid #8fa799; border-radius:10px; background:linear-gradient(135deg,#1b3a45,#142e36); box-shadow:inset 0 0 20px #081c27,0 5px #071f29; }
+.circuit-tile { position:relative; display:block; width:100%; aspect-ratio:1; padding:0; border:2px solid #5d827f; border-radius:7px; background:#26454a; overflow:hidden; touch-action:manipulation; }
+.circuit-tile svg { display:block; width:100%; height:100%; }
+.circuit-tile .wire { stroke:#668f81; stroke-width:8; fill:none; stroke-linecap:round; }
+.circuit-tile .joint { fill:#abc1a0; stroke:#1d4944; stroke-width:2; }
+.circuit-tile.blocked { border-color:#263e44; background:repeating-linear-gradient(135deg,#1b333b 0 9px,#263b41 10px 13px); }.circuit-tile .burnt { stroke:#496059; stroke-width:3; }
+.circuit-tile.source { border-color:#bfdb94; background:#365c47; }.circuit-tile .power-core { fill:#23483f; stroke:#baf4c8; stroke-width:2; }.circuit-tile .source-symbol { fill:#e0fbb0; }
+.circuit-tile.target { border-color:#dbb379; background:#564d37; }.compartment { fill:#253c3f; stroke:#e3c783; stroke-width:3; }.compartment-lid { stroke:#e3c783; stroke-width:3; transition:transform .25s; }.found-part { fill:#d3ffd8; opacity:0; transition:opacity .2s; }
+.circuit-tile[data-powered="true"] .wire { stroke:#b4f9be; filter:drop-shadow(0 0 3px #b7ffa2); }.circuit-tile[data-powered="true"] { background:#315d4f; }
+.puzzle-screen[data-phase="flow"] .circuit-tile[data-powered="true"]:not([data-flow="true"]) .wire { stroke:#668f81; filter:none; }
+.circuit-tile[data-flow="true"] { box-shadow:0 0 9px #c5ffac; border-color:#d6ffac; }.circuit-tile[data-flow="true"] .wire { stroke:#edffb2; filter:drop-shadow(0 0 5px #c7ffa2); }
+.circuit-tile[data-revealed="true"] { box-shadow:0 0 15px #c6ffd1; border-color:#cbffd8; }.circuit-tile[data-revealed="true"] .compartment-lid { transform:translateX(12px); }.circuit-tile[data-revealed="true"] .found-part { opacity:1; }
+.circuit-tile:disabled { cursor:default; }.circuit-tile:focus-visible { outline-offset:-4px; }
+@media (max-width:355px) { .dock-screen,.puzzle-screen { padding-inline:12px; }.dock-art { height:104px; }.recipe-part { font-size:.55rem; }.puzzle-heading h1 { font-size:.94rem; } }

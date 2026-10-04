@@ -10,6 +10,8 @@ import {
 import {bindUpgradeFeedback,tooltipPosition} from './upgrade-feedback.js';
 import {hazardSvg,HAZARD_NAMES} from './hazard-art.js';
 import {MOBILE_FEEDBACK_QUERY, tutorialTop, pickupTextCovered, createFlightFeedback} from './flight-feedback.js';
+import {migrateOrbitState,beginOrbitRun,discoverOrbitObject,pendingJobs} from './orbit-logic.js';
+import {createOrbitUi} from './orbit-ui.js';
 
 const SAVE_KEY = "cosmic-garage-active-v2";
 const canvas = document.querySelector("#gameCanvas");
@@ -17,7 +19,7 @@ const ctx = canvas.getContext("2d");
 const dom = Object.fromEntries(
   [
     "scrapValue", "bestValue", "launchCount", "garageStats", "flightHud", "distanceValue",
-    "flightBestValue", "flightProgressBar", "eventToast", "eventTitle", "eventMessage", "eventResult", "cargoHud", "cargoGain", "fuelHint",
+    "flightBestValue", "flightProgressBar", "eventToast", "eventTitle", "eventMessage", "eventResult", "cargoHud", "cargoGain", "fuelHint", "dockEntry", "resultDockButton", "orbitUnlock",
     "garagePanel", "upgradeList", "launchButton", "launchEstimate", "resultCard", "resultKicker",
     "resultTitle", "resultDistance", "resultBreakdown", "resultReward", "collectButton", "resetButton",
     "locationLabel", "machineNote", "flightCaption", "upgradePop", "benchHint", "resultNext", "goalStatus", "routeMap", "fuelValue", "hullValue", "cargoValue", "objectLayer", "runClock", "goalDetail", "recordMarker", "recordBanner", "upgradeExplanation", "upgradeExplanationText", "upgradeExplanationTitle", "infoClose", "tutorialOverlay", "tutorialSpot", "tutorialBubble", "tutorialTitle", "tutorialText", "tutorialContinue", "tutorialSkip", "fuelHud", "fuelMeter", "fuelGain", "altitudeCapsule", "stageBanner", "hullHud", "speedValue", "tutorialClose", "collisionSuppress",
@@ -51,6 +53,17 @@ const heldKeys=new Set();
 let pointerId = null;
 let objectNodes = new Map();
 const upgradeFeedback=bindUpgradeFeedback({list:dom.upgradeList,box:dom.upgradeExplanation,title:dom.upgradeExplanationTitle,text:dom.upgradeExplanationText,close:dom.infoClose,pop:dom.upgradePop,configs:UPGRADES,isGarage:()=>mode==='garage',position:positionInfo});
+const orbitUi=createOrbitUi({getState:()=>state,save:saveState,setMode,enterGarage:()=>{
+ setMode('garage');dom.garagePanel.hidden=false;dom.garageStats.hidden=false;dom.launchButton.disabled=false;
+ dom.machineNote.hidden=false;dom.locationLabel.textContent='ГАРАЖ · ОТСЕК 07';renderGarageUi();
+ dom.dockEntry.focus({preventScroll:true});
+},reducedMotion});
+
+function openDock(){
+ if(!state.orbitUnlocked||mode==='launch')return;
+ hideInfo();dom.garagePanel.hidden=true;dom.garageStats.hidden=true;dom.resultCard.hidden=true;dom.orbitUnlock.hidden=true;
+ orbitUi.dock();
+}
 
 const PART_ICONS = {
   engine: '<path d="M9 12h18l-3 15H12z" fill="#dfb967"/><path d="M10 13H6v10h6m14-10h5v10h-6" stroke="#87b7ab" stroke-width="4"/><path d="M15 28l3 7 4-7" fill="#ff8c48"/><path d="M12 6h13v5H12z" fill="#bac7b5"/>',
@@ -105,11 +118,11 @@ function nextEffect(key,level) {
 
 function loadState() {
  try {
-  const raw=JSON.parse(localStorage.getItem(SAVE_KEY)??localStorage.getItem("cosmic-garage-proof-v1")),migrated=sanitizeState(raw);
-  if(raw&&raw.saveVersion!==5){try{localStorage.setItem(SAVE_KEY,JSON.stringify(migrated));}catch{/* Keep loaded progress even when storage is read-only. */}}
+  const raw=JSON.parse(localStorage.getItem(SAVE_KEY)??localStorage.getItem("cosmic-garage-proof-v1")),migrated=migrateOrbitState(sanitizeState(raw),raw);
+  if(raw&&(raw.saveVersion!==5||raw.orbitHubVersion!==1)){try{localStorage.setItem(SAVE_KEY,JSON.stringify(migrated));}catch{/* Keep loaded progress even when storage is read-only. */}}
   return migrated;
  }
- catch{return createInitialState();}
+ catch{return migrateOrbitState(createInitialState(),null);}
 }
 
 function saveState() {
@@ -118,6 +131,7 @@ function saveState() {
 }
 
 function renderGarageUi(purchasedKey = null) {
+  dom.dockEntry.hidden=!state.orbitUnlocked;
   updateGoal();
   tallies.delete(dom.scrapValue);
   dom.scrapValue.textContent = state.scrap;
@@ -260,9 +274,11 @@ function buyUpgrade(key) {
 function startLaunch(){
  if(mode!=="garage")return;
  hideInfo();
+ dom.orbitUnlock.hidden=true;orbitUi.hide();
+ const runId=beginOrbitRun(state);saveState();
  const rawSeed=new URLSearchParams(location.search).get("seed");
  const rng=rawSeed!==null&&Number.isFinite(Number(rawSeed))?seededRandom(Number(rawSeed)):Math.random;
- launch={run:createFlight(state.upgrades,createCourse(rng,statsFor(state.upgrades))),plan:null,
+ launch={id:runId,run:createFlight(state.upgrades,createCourse(rng,statsFor(state.upgrades))),plan:null,
   oldBest:state.bestAltitude,recordShown:false,recordUntil:0,start:performance.now(),resultStart:0,
   impactDone:false,quality:"mediocre",accumulator:0,tutorial:null,tutorialCooldown:0,lastTutorialChunk:-1,controls:createControlTimeline()};
  armCollisionTutorial(launch.run,state,collisionSession);
@@ -285,6 +301,7 @@ function finishLaunch() {
  if(mode!=="launch")return;
  launch.plan=flightResult(launch.run,state.launches,state.claimedMilestones,state.orbitBonusClaimed);
  const p=launch.plan;
+ launch.discovery=discoverOrbitObject(state,launch.id,p);
  launch.quality=p.reason==="orbit"?"exceptional":p.distance>launch.oldBest?"good":"mediocre";
  recordFlight(state,p);saveState();
  setMode("result");launch.resultStart=performance.now();
@@ -303,11 +320,18 @@ function finishLaunch() {
  <div class="result-line"><span>Ценный лом · канистры · удары</span><strong>${p.salvage} · ${p.fuelPickups} · ${p.hits}</strong></div>
  ${p.firstFlightBonus?'<div class="result-line"><span>На первую деталь</span><strong>+'+p.firstFlightBonus+' лома</strong></div>':""}`;
  dom.resultNext.textContent=resultGoal(p.distance);
+ dom.resultDockButton.hidden=p.reason!=='orbit';
+ dom.collectButton.textContent=p.reason==='orbit'?'ЗАБРАТЬ · ГАРАЖ':'ЗАБРАТЬ И В ГАРАЖ';
+ if(p.reason==='orbit')dom.resultNext.textContent=`${launch.discovery.first?'ДОК ОТКРЫТ · ':''}НОВАЯ НАХОДКА · ОБЪЕКТОВ ДЛЯ РАЗБОРА: ${pendingJobs(state)}`;
+ if(launch.discovery.first){
+  dom.orbitUnlock.hidden=false;
+  setTimeout(()=>{if(mode==='result')dom.orbitUnlock.hidden=true;},1600);
+ }
  dom.resultCard.hidden=false;dom.flightCaption.hidden=true;
  updateGoal(p.distance);dom.collectButton.focus({preventScroll:true});
 }
 
-function collectReward() {
+function collectReward(destination='garage') {
   if (mode !== "result") return;
   const plan = launch.plan;
   const before = state.scrap;
@@ -322,6 +346,7 @@ function collectReward() {
   launch = null;
   particles = [];
   dom.resultCard.hidden = true;
+  dom.orbitUnlock.hidden=true;
   dom.garagePanel.hidden = false;
   dom.garageStats.hidden = false;
   dom.launchButton.disabled = false;
@@ -334,6 +359,7 @@ function collectReward() {
   flyScrapToWallet(source);
   dom.launchButton.focus({ preventScroll: true });
   window.scrollTo({ top: 0, behavior: "instant" });
+  if(destination==='dock')openDock();
 }
 
 function flyScrapToWallet(source) {
@@ -373,7 +399,8 @@ function resetGame() {
   resetArmedUntil = 0;
   dom.resetButton.textContent = "DEV RESET";
   dom.resetButton.removeAttribute("aria-label");
-  state = createInitialState();collisionSession.shown=false;
+  state = migrateOrbitState(createInitialState(),null);collisionSession.shown=false;
+  orbitUi.hide();dom.orbitUnlock.hidden=true;
   hideInfo();dom.tutorialOverlay.hidden=true;dom.recordBanner.hidden=true;dom.stageBanner.hidden=true;shell.dataset.paused="false";
   dom.objectLayer.hidden=true;
   targetX=.5;keyboardDirection=0;
@@ -965,6 +992,7 @@ function frame(now) {
   // Catch up low-FPS visible frames with fixed simulation substeps; hidden tabs pause.
   const dt = Math.max(0, (now - lastFrame) / 1000);
   lastFrame = now;
+  if(mode==='dock'||mode==='puzzle'){requestAnimationFrame(frame);return;}
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
   if (mode === "launch") drawLaunch(now, dt);
   else if (mode === "result" && launch) {
@@ -982,6 +1010,8 @@ dom.upgradeList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-upgrade]");
   if (button) buyUpgrade(button.dataset.upgrade);
 });
+dom.dockEntry.addEventListener('click',openDock);
+dom.resultDockButton.addEventListener('click',()=>collectReward('dock'));
 
 // Info interactions are bound separately by upgrade-feedback.js.
 dom.tutorialClose.addEventListener("click",()=>dismissTutorial());
